@@ -36,7 +36,13 @@ const CLIENT_ID = "861609598303-o00osplh8n4jidur6mr6931c8sjikjuu.apps.googleuser
 const SERVER_URL_BASE = "http://localhost:3000/"
 const HOSTED_DOMAIN = "example.com"
 
-let state = {}
+function newState () {
+    return {
+        reqs: []
+    }
+}
+
+let state = newState()
 
 function googleInit () {
     console.log("google init");
@@ -93,7 +99,7 @@ function updateGoogleSigninStatus (isSignedIn) {
         clearRefresh()
         showNoAuthElems = false
         console.log("No google user!")
-        state = {}
+        state = newState()
     }
     Array.from(document.getElementsByClassName("no-auth"))
         .forEach(e => e.hidden = showNoAuthElems)
@@ -123,7 +129,7 @@ function googleSignOut () {
 }
 
 function setCategoriesInProjectsHeader () {
-    let allProjectsHeaderRowEl = document.querySelector("table#all_projects tr")
+    let allProjectsHeaderRowEl = document.querySelector("#all_projects table tr")
     let headerCells = [
         'Name',
         'Description',
@@ -143,13 +149,7 @@ function setCategoriesInProjectsHeader () {
     allProjectsHeaderRowEl.parentNode.replaceChild(newHeaderRowEl, allProjectsHeaderRowEl)
 }
 
-function upsertProjectRow (project) {
-    let yourProjectsTableEl = document.querySelector("table#your_projects")
-    let existingYourProject = yourProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
-
-    let allProjectsTableEl = document.querySelector("table#all_projects")
-    let existingAllProject = allProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
-
+function createProjectRowEl (project) {
     let rowEl = document.createElement("tr")
     rowEl.setAttribute("projectId", project.id)
     let nameCellEl = document.createElement("td")
@@ -169,7 +169,11 @@ function upsertProjectRow (project) {
     rowEl.appendChild(sloganCellEl)
 //    rowEl.appendChild(idCellEl)
 
-    let rowAllEl = rowEl.cloneNode(true)
+    return rowEl
+}
+
+function upsertYourProjectRow (project) {
+    let rowEl = createProjectRowEl(project)
 
     let removeButtonEl = document.createElement("button")
     removeButtonEl.appendChild(document.createTextNode('Remove'))
@@ -193,6 +197,18 @@ function upsertProjectRow (project) {
 
     rowEl.appendChild(removeCellEl)
     rowEl.appendChild(editCellEl)
+
+    let yourProjectsTableEl = document.querySelector("#your_projects table")
+    let existingYourProject = yourProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
+    if (existingYourProject) {
+        yourProjectsTableEl.replaceChild(rowEl, existingYourProject)
+    } else {
+        yourProjectsTableEl.appendChild(rowEl)
+    }
+}
+
+function upsertAllProjectRow (project) {
+    let rowAllEl = createProjectRowEl(project)
 
     // add empty space for Votes separator column
     rowAllEl.appendChild(document.createElement("td"))
@@ -221,17 +237,20 @@ function upsertProjectRow (project) {
         rowAllEl.appendChild(buttonCellEl)
     }
 
-    if (existingYourProject) {
-        yourProjectsTableEl.replaceChild(rowEl, existingYourProject)
-    } else {
-        yourProjectsTableEl.appendChild(rowEl)
-    }
-
+    let allProjectsTableEl = document.querySelector("#all_projects table")
+    let existingAllProject = allProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
     if (existingAllProject) {
         allProjectsTableEl.replaceChild(rowAllEl, existingAllProject)
     } else {
         allProjectsTableEl.appendChild(rowAllEl)
     }
+}
+
+function upsertProjectRow (project) {
+    if (project.authorEmail == state.email) {
+        upsertYourProjectRow(project)
+    }
+    upsertAllProjectRow(project)
 }
 
 function upsertVoteRow (vote) {
@@ -281,8 +300,8 @@ function upsertVoteRow (vote) {
 }
 
 function removeOldProjects () {
-    let yourProjectsRowEls = Array.from(document.querySelectorAll("table#your_projects tr"))
-    let allProjectsRowEls = Array.from(document.querySelectorAll("table#all_projects tr"))
+    let yourProjectsRowEls = Array.from(document.querySelectorAll("#your_projects table tr"))
+    let allProjectsRowEls = Array.from(document.querySelectorAll("#all_projects table tr"))
 
     let yourProjectIds = state.projects
         .filter(project => project.authorEmail == state.email)
@@ -312,6 +331,28 @@ function clearRefresh () {
     }
 }
 
+function errMsg (err) {
+    if (err.msg) {
+        return err.msg
+    }
+    if (err.obj) {
+        return JSON.stringify(err.obj)
+    }
+    if (err.code) {
+        return err.code
+    }
+    return JSON.stringify(err)
+}
+
+function setDisableInputs (onOffDisable) {
+    for (let button of document.querySelectorAll("button")) {
+        button.disabled = onOffDisable
+    }
+    for (let checkbox of document.querySelectorAll("input[type=checkbox]")) {
+        checkbox.disabled = onOffDisable
+    }
+}
+
 async function updateState (response) {
     clearRefresh()
     console.log("Updating state", response)
@@ -320,13 +361,19 @@ async function updateState (response) {
     console.log("Response json", json)
     document.querySelector("#error").textContent = ''
     if (json.err) {
-        document.querySelector("#error").textContent = json.err
-        return
+        document.querySelector("#error").textContent = errMsg(json.err)
+        setDisableInputs(true)
+        state.refresh = setTimeout(googleInit, 30000 + Math.floor(Math.random() * 10000))
+    } else {
+        setDisableInputs(false)
+        state.refresh = setTimeout(getState, 30000 + Math.floor(Math.random() * 10000))
+
+        // state.reqs.shift()
+        state.projects = json.data.projects
+        state.categories = json.data.categories
+        state.votes = json.data.votes
     }
 
-    state.projects = json.data.projects
-    state.categories = json.data.categories
-    state.votes = json.data.votes
     setCategoriesInProjectsHeader()
     state.projects.forEach(upsertProjectRow)
 //    state.votes.forEach(upsertVoteRow)
@@ -334,24 +381,49 @@ async function updateState (response) {
     // TODO: dropdowns for categories (votes)
     // TODO: dropdowns for projects (votes)
 
-    state.refresh = setTimeout(getState, 30000 + Math.floor(Math.random() * 10000))
+    let allProjectsTitle = document.querySelector("#all_projects p")
+    allProjectsTitle.innerHTML = allProjectsTitle.innerHTML
+        .replace(/All .*Projects/, `All <b>${state.projects.length}</b> Projects`)
+    let yourProjectsTitle = document.querySelector("#your_projects p")
+    yourProjectsTitle.innerHTML = yourProjectsTitle.innerHTML
+        .replace(/Your .*Projects/, `Your <b>${state.projects.filter(p => p.authorEmail == state.email).length}</b> Project(s)`)
 }
 
 function sendRequest (path, data = {}, cb = null, method = "POST") {
     data.id_token = state.id_token
     // https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
-    fetch(SERVER_URL_BASE + path, {
-        method: method, // *GET, POST, PUT, DELETE, etc.
-        //mode: "cors", // no-cors, cors, *same-origin
-        cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
-        credentials: "same-origin", // include, *same-origin, omit
-        headers: {
-            "Content-Type": "application/json",
-            // "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: JSON.stringify(data)
-    })
-    .then(cb || updateState)
+    let req = {
+        at: Date.now(),
+        url: SERVER_URL_BASE + path,
+        options: {
+            method: method, // *GET, POST, PUT, DELETE, etc.
+            //mode: "cors", // no-cors, cors, *same-origin
+            cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+            credentials: "same-origin", // include, *same-origin, omit
+            headers: {
+                "Content-Type": "application/json",
+                // "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: JSON.stringify(data)
+        }
+    }
+
+    // state.reqs.push(req)
+    // req = state.reqs[0]
+    fetch(req.url, req.options)
+        .then(cb || updateState)
+        .catch((err) =>
+            updateState({
+                json: () => {
+                    console.log("json response called")
+                    return {
+                        err: {
+                            msg: err
+                        }
+                    }
+                }
+            })
+        )
 }
 
 function test () {
@@ -456,39 +528,45 @@ table, tr, td, th {
 
             <div id="error"></div>
 
-            <p>All Projects (for Voting):</p>
-            <table id="all_projects">
-                <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Members</th>
-                    <th>Slogan</th>
-                    <th>--Votes--</th>
-                </tr>
-            </table>
+            <div id="all_projects">
+                <p>All Projects (for Voting):</p>
+                <table>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Members</th>
+                        <th>Slogan</th>
+                        <th>--Votes--</th>
+                    </tr>
+                </table>
+            </div>
 <!--
-            <p>My Votes</p>
-            <table id="my_votes">
-                <tr>
-                    <th>Project</th>
-                    <th>Category</th>
-                    <th>Remove</th>
-                    <th>Edit</th>
-                </tr>
-            </table>
+            <div id="my_votes">
+                <p>My Votes</p>
+                <table>
+                    <tr>
+                        <th>Project</th>
+                        <th>Category</th>
+                        <th>Remove</th>
+                        <th>Edit</th>
+                    </tr>
+                </table>
+            </div>
 -->
 
-            <p>Your Projects:</p>
-            <table id="your_projects">
-                <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Members</th>
-                    <th>Slogan</th>
-                    <th>Remove</th>
-                    <th>Edit</th>
-                </tr>
-            </table>
+            <div id="your_projects">
+                <p>Your Projects:</p>
+                <table>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Members</th>
+                        <th>Slogan</th>
+                        <th>Remove</th>
+                        <th>Edit</th>
+                    </tr>
+                </table>
+            </div>
 
             <form id="new_project" onsubmit="return false">
                 <p>New Project:</p>

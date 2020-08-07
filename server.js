@@ -352,13 +352,14 @@ app.get('/votes/dump', async (req, res, next) => {
 
     let data = []
 
+    // sort desc == reversed
     voteCounts = Object.values(voteCounts)
     voteCounts.sort((a, b) => {
         if (a.category.name != b.category.name) {
-            return a.category.name > b.category.name ? 1 : -1
+            return a.category.name < b.category.name ? 1 : -1
         }
-        if (a.count > b.count) return 1
-        if (a.count < b.count) return -1
+        if (a.count < b.count) return 1
+        if (a.count > b.count) return -1
         return 0
     })
 
@@ -427,6 +428,7 @@ app.post('/authtest', async (req, res, next) => {
 
 app.post('/state', async (req, res, next) => {
     console.log('Get state')
+    state.count++
     sendStateData(res)
 })
 
