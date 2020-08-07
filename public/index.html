@@ -1,0 +1,454 @@
+<html>
+    <head>
+        <title>Hack Day Projects Voting</title>
+
+<!--
+either run in this same dir:
+python -m SimpleHTTPServer 3000
+then go to:
+http://localhost:3000/
+
+or also run the server with npm start which serves this file
+
+https://developers.google.com/identity/sign-in/web/reference
+
+https://developers.google.com/identity/sign-in/web/sign-in
+https://developers.google.com/identity/sign-in/web/backend-auth
+https://developers.google.com/identity/sign-in/web/people
+
+https://github.com/googleapis/google-api-dotnet-client
+https://developers.google.com/api-client-library/dotnet/get_started
+https://developers.google.com/api-client-library/
+
+https://github.com/google/google-api-javascript-client
+https://developers.google.com/api-client-library/javascript/samples/samples#authorizing-and-making-authorized-requests
+
+
+
+        <meta name="google-signin-scope" content="profile email">
+
+        <meta name="google-signin-client_id"
+            content="861609598303-o00osplh8n4jidur6mr6931c8sjikjuu.apps.googleusercontent.com" />
+-->
+        <script>
+
+const CLIENT_ID = "861609598303-o00osplh8n4jidur6mr6931c8sjikjuu.apps.googleusercontent.com"
+const SERVER_URL_BASE = "http://localhost:3000/"
+const HOSTED_DOMAIN = "example.com"
+
+let state = {}
+
+function googleInit () {
+    console.log("google init");
+    gapi.load('auth2', () => {
+        gapi.auth2.init({
+            client_id: CLIENT_ID,
+            fetch_basic_profile: true,
+            //hosted_domain: HOSTED_DOMAIN,
+            ux_mode: "redirect"
+        }).then(() => {
+            console.log("google auth SUCCESS")
+            let googleAuth = gapi.auth2.getAuthInstance()
+            googleAuth.isSignedIn.listen(updateGoogleSigninStatus)
+            updateGoogleSigninStatus(googleAuth.isSignedIn.get())
+        }).catch(err => {
+            console.log("google auth FAIL")
+            console.log(err)
+        })
+    })
+}
+
+function updateGoogleSigninStatus (isSignedIn) {
+    console.log("google signin status: " + isSignedIn)
+    let showNoAuthElems = true
+    let showYesAuthElems = true
+    if (isSignedIn) {
+        showYesAuthElems = false
+        let googleUser = gapi.auth2.getAuthInstance().currentUser.get()
+        console.log(googleUser)
+        console.log(googleUser.getAuthResponse())
+        state.id_token = googleUser.getAuthResponse().id_token
+        console.log('Token: ' + state.id_token)
+
+        let profile = googleUser.getBasicProfile()
+        console.log(profile)
+        console.log('ID: ' + profile.getId()) // Do not send to your backend! Use an ID token instead.
+        console.log('Name: ' + profile.getName())
+        console.log('Image URL: ' + profile.getImageUrl())
+        console.log('Email: ' + profile.getEmail()) // This is null if the 'email' scope is not present.
+        state.id = profile.getId()
+        state.email = profile.getEmail()
+
+        let helloUserElem = document.getElementById("hello-user")
+        helloUserElem.getElementsByTagName("img")[0]
+            .setAttribute("src", profile.getImageUrl())
+        helloUserElem.getElementsByTagName("span")[0]
+            .textContent = profile.getName()
+
+        getState()
+    } else {
+        clearRefresh()
+        showNoAuthElems = false
+        console.log("No google user!")
+        state = {}
+    }
+    Array.from(document.getElementsByClassName("no-auth"))
+        .forEach(e => e.hidden = showNoAuthElems)
+    Array.from(document.getElementsByClassName("yes-auth"))
+        .forEach(e => e.hidden = showYesAuthElems)
+}
+
+// https://developers.google.com/identity/sign-in/web/build-button
+function googleSignIn () {
+    console.log("google sign IN")
+    let auth2 = gapi.auth2.getAuthInstance()
+    auth2.signIn().then(googleUser => {
+        console.log('User signed in.')
+        console.log(googleUser)
+    }).catch(err => {
+        console.log("signin FAILED")
+        console.log(err)
+    })
+}
+
+function googleSignOut () {
+    console.log("google sign OUT")
+    let auth2 = gapi.auth2.getAuthInstance()
+    auth2.signOut().then(function () {
+        console.log('User signed out.')
+    })
+}
+
+function setCategoriesInProjectsHeader () {
+    let allProjectsHeaderRowEl = document.querySelector("table#all_projects tr")
+    let headerCells = [
+        'Name',
+        'Description',
+        'Members',
+        'Slogan',
+        '--Votes--'
+    ]
+    for (let category of state.categories) {
+        headerCells.push(category.name)
+    }
+    let newHeaderRowEl = document.createElement("tr")
+    for (let name of headerCells) {
+        let nameCellEl = document.createElement("th")
+        nameCellEl.appendChild(document.createTextNode(name))
+        newHeaderRowEl.appendChild(nameCellEl)
+    }
+    allProjectsHeaderRowEl.parentNode.replaceChild(newHeaderRowEl, allProjectsHeaderRowEl)
+}
+
+function upsertProjectRow (project) {
+    let myProjectsTableEl = document.querySelector("table#my_projects")
+    let existingMyProject = myProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
+
+    let allProjectsTableEl = document.querySelector("table#all_projects")
+    let existingAllProject = allProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
+
+    let rowEl = document.createElement("tr")
+    rowEl.setAttribute("projectId", project.id)
+    let nameCellEl = document.createElement("td")
+    nameCellEl.appendChild(document.createTextNode(project.name))
+    let descriptionCellEl = document.createElement("td")
+    descriptionCellEl.appendChild(document.createTextNode(project.description))
+    let membersCellEl = document.createElement("td")
+    membersCellEl.appendChild(document.createTextNode(project.members))
+    let sloganCellEl = document.createElement("td")
+    sloganCellEl.appendChild(document.createTextNode(project.slogan))
+    let idCellEl = document.createElement("td")
+    idCellEl.appendChild(document.createTextNode(project.id))
+
+    rowEl.appendChild(nameCellEl)
+    rowEl.appendChild(descriptionCellEl)
+    rowEl.appendChild(membersCellEl)
+    rowEl.appendChild(sloganCellEl)
+//    rowEl.appendChild(idCellEl)
+
+    let rowAllEl = rowEl.cloneNode(true)
+
+    let removeButtonEl = document.createElement("button")
+    removeButtonEl.appendChild(document.createTextNode('Remove'))
+    removeButtonEl.onclick = () => deleteProject(project.id)
+    let removeCellEl = document.createElement("td")
+    removeCellEl.appendChild(removeButtonEl)
+    let editButtonEl = document.createElement("button")
+    editButtonEl.appendChild(document.createTextNode('Edit'))
+    editButtonEl.onclick = () => upsertProject(project)
+    let editCellEl = document.createElement("td")
+    editCellEl.appendChild(editButtonEl)
+
+    rowEl.appendChild(removeCellEl)
+    rowEl.appendChild(editCellEl)
+
+    // add empty space for Votes separator column
+    rowAllEl.appendChild(document.createElement("td"))
+
+    for (let category of state.categories) {
+        let vote = state.votes.find(vote =>
+            project.id == vote.projectId && category.id == vote.categoryId && state.email == vote.authorEmail
+        )
+        let checkButtonEl = document.createElement("input")
+        checkButtonEl.type = 'checkbox'
+        checkButtonEl.checked = vote != null
+        // 'var' is the absolute devil
+        // https://stackoverflow.com/questions/750486/javascript-closure-inside-loops-simple-practical-example
+        checkButtonEl.onclick = function () {
+            if (vote) {
+                deleteVote(vote.id)
+            } else {
+                upsertVote({
+                    projectId: project.id,
+                    categoryId: category.id
+                })
+            }
+        }
+        let buttonCellEl = document.createElement("td")
+        buttonCellEl.appendChild(checkButtonEl)
+        rowAllEl.appendChild(buttonCellEl)
+    }
+
+    if (existingMyProject) {
+        myProjectsTableEl.replaceChild(rowEl, existingMyProject)
+    } else {
+        myProjectsTableEl.appendChild(rowEl)
+    }
+
+    if (existingAllProject) {
+        allProjectsTableEl.replaceChild(rowAllEl, existingAllProject)
+    } else {
+        allProjectsTableEl.appendChild(rowAllEl)
+    }
+}
+
+function upsertVoteRow (vote) {
+    let project = state.projects.find(project => project.id == vote.projectId)
+    let category = state.categories.find(category => category.id == vote.categoryId)
+
+    let myVotesTableEl = document.querySelector("table#my_votes")
+    let existingMyVote = myVotesTableEl.querySelector('tr[voteId="'+vote.id+'"]')
+
+    let rowEl = document.createElement("tr")
+    rowEl.setAttribute("voteId", vote.id)
+    let projectCellEl = document.createElement("td")
+    projectCellEl.appendChild(document.createTextNode(project ? project.name : 'REMOVED'))
+    let categoryCellEl = document.createElement("td")
+    categoryCellEl.appendChild(document.createTextNode(category ? category.name : 'REMOVED'))
+    let idCellEl = document.createElement("td")
+    idCellEl.appendChild(document.createTextNode(vote.id))
+
+    let removeButtonEl = document.createElement("button")
+    removeButtonEl.appendChild(document.createTextNode('Remove'))
+    removeButtonEl.onclick = () => deleteVote(vote.id)
+    let removeCellEl = document.createElement("td")
+    removeCellEl.appendChild(removeButtonEl)
+    let editButtonEl = document.createElement("button")
+    editButtonEl.appendChild(document.createTextNode('Edit'))
+    editButtonEl.onclick = () => upsertVote(vote)
+    let editCellEl = document.createElement("td")
+    editCellEl.appendChild(editButtonEl)
+
+    rowEl.appendChild(projectCellEl)
+    rowEl.appendChild(categoryCellEl)
+//    rowEl.appendChild(idCellEl)
+    rowEl.appendChild(removeCellEl)
+    rowEl.appendChild(editCellEl)
+
+    if (existingMyVote) {
+        myVotesTableEl.replaceChild(rowEl, existingMyVote)
+    } else {
+        myVotesTableEl.appendChild(rowEl)
+    }
+}
+
+function removeOldProjects () {
+    let myProjectsRowEls = Array.from(document.querySelector("table#my_projects tr"))
+    let allProjectsRowEls = Array.from(document.querySelector("table#all_projects tr"))
+
+    let myProjectIds = state.projects
+        .filter(project => project.authorEmail == state.email)
+        .map(project => project.id)
+    for (let rowEl of myProjectsRowEls) {
+        let projectId = rowEl.getAttribute("projectId")
+        if (projectId && !myProjectIds.include(projectId)) {
+            rowEl.parentNode.removeChild(rowEl)
+        }
+    }
+
+    let allProjectIds = state.projects.map(project => project.id)
+    for (let rowEl of myProjectsRowEls) {
+        let projectId = rowEl.getAttribute("projectId")
+        if (projectId && !allProjectIds.include(projectId)) {
+            rowEl.parentNode.removeChild(rowEl)
+        }
+    }
+}
+
+function clearRefresh () {
+    if (state.refresh) {
+        clearTimeout(state.refresh)
+        delete state.refresh
+    }
+}
+
+async function updateState (response) {
+    clearRefresh()
+    console.log("Updating state", response)
+
+    let json = await response.json()
+    console.log("Response json", json)
+    document.querySelector("#error").textContent = ''
+    if (json.err) {
+        document.querySelector("#error").textContent = json.err
+        return
+    }
+
+    state.projects = json.data.projects
+    state.categories = json.data.categories
+    state.votes = json.data.votes
+    setCategoriesInProjectsHeader()
+    state.projects.forEach(upsertProjectRow)
+//    state.votes.forEach(upsertVoteRow)
+    removeOldProjects()
+    // TODO: dropdowns for categories (votes)
+    // TODO: dropdowns for projects (votes)
+
+    state.refresh = setTimeout(getState, 30000 + Math.floor(Math.random() * 10000))
+}
+
+function sendRequest (path, data = {}, cb = null, method = "POST") {
+    data.id_token = state.id_token
+    // https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
+    fetch(SERVER_URL_BASE + path, {
+        method: method, // *GET, POST, PUT, DELETE, etc.
+        //mode: "cors", // no-cors, cors, *same-origin
+        cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+        credentials: "same-origin", // include, *same-origin, omit
+        headers: {
+            "Content-Type": "application/json",
+            // "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: JSON.stringify(data)
+    })
+    .then(cb || updateState)
+}
+
+function test () {
+    sendRequest(
+        "authtest",
+        {},
+        response => console.log(JSON.stringify(response.json()))
+    )
+}
+
+function getState () {
+    sendRequest("state")
+}
+
+function upsertProject (project) {
+    sendRequest(
+        "projects",
+        {
+            name: project.name,
+            description: project.description,
+            members: project.members,
+            slogan: project.slogan,
+            id: project.id
+        }
+    )
+}
+
+function deleteProject (id) {
+    sendRequest("projects", {id: id}, null, "DELETE")
+}
+
+function upsertVote (vote) {
+    sendRequest(
+        "votes",
+        {
+            projectId: vote.projectId,
+            categoryId: vote.categoryId,
+            id: vote.id
+        }
+    )
+}
+
+function deleteVote (id) {
+    sendRequest("votes", {id: id}, null, "DELETE")
+}
+
+        </script>
+        <style>
+
+#error {
+    color: red;
+}
+
+table, tr, td, th {
+    border: 1px solid black;
+    padding: 3px;
+}
+
+        </style>
+    </head>
+    <body>
+<!--
+        <div class="g-signin2" data-onsuccess="onSignIn"></div>
+-->
+
+        <div class="no-auth">
+            <div>Who are you?</div>
+            <div><a href="#" onclick="googleSignIn();">Sign In</a></div>
+        </div>
+
+        <div class="yes-auth">
+            <div>
+                Hello
+                <div id="hello-user">
+                    <img />
+                    <span></span>
+                </div>
+            </div>
+            <div><a href="#" onclick="googleSignOut();">Sign out</a></div>
+            <div><a href="#" onclick="test();">Test</a></div>
+
+            <div id="error"></div>
+
+            <p>My Projects:</p>
+            <table id="my_projects">
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Members</th>
+                    <th>Slogan</th>
+                    <th>Remove</th>
+                    <th>Edit</th>
+                </tr>
+            </table>
+
+            <p>All Projects (for Voting):</p>
+            <table id="all_projects">
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Members</th>
+                    <th>Slogan</th>
+                    <th>--Votes--</th>
+                </tr>
+            </table>
+<!--
+            <p>My Votes</p>
+            <table id="my_votes">
+                <tr>
+                    <th>Project</th>
+                    <th>Category</th>
+                    <th>Remove</th>
+                    <th>Edit</th>
+                </tr>
+            </table>
+        </div>
+-->
+        <script src="https://apis.google.com/js/platform.js?onload=googleInit" async defer></script>
+    </body>
+</html>
