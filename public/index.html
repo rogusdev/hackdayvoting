@@ -62,6 +62,9 @@ function updateGoogleSigninStatus (isSignedIn) {
     console.log("google signin status: " + isSignedIn)
     let showNoAuthElems = true
     let showYesAuthElems = true
+    let form = document.querySelector("form#new_project")
+    clearNewProject(form)
+
     if (isSignedIn) {
         showYesAuthElems = false
         let googleUser = gapi.auth2.getAuthInstance().currentUser.get()
@@ -141,8 +144,8 @@ function setCategoriesInProjectsHeader () {
 }
 
 function upsertProjectRow (project) {
-    let myProjectsTableEl = document.querySelector("table#my_projects")
-    let existingMyProject = myProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
+    let yourProjectsTableEl = document.querySelector("table#your_projects")
+    let existingYourProject = yourProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
 
     let allProjectsTableEl = document.querySelector("table#all_projects")
     let existingAllProject = allProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
@@ -175,7 +178,16 @@ function upsertProjectRow (project) {
     removeCellEl.appendChild(removeButtonEl)
     let editButtonEl = document.createElement("button")
     editButtonEl.appendChild(document.createTextNode('Edit'))
-    editButtonEl.onclick = () => upsertProject(project)
+    editButtonEl.onclick = () => {
+        let form = document.querySelector("form#new_project")
+        form.elements['name'].value = project.name
+        form.elements['description'].value = project.description
+        form.elements['members'].value = project.members
+        form.elements['slogan'].value = project.slogan
+        form.elements['id'].value = project.id
+        form.querySelector("button").innerText = 'Edit'
+        form.querySelector("p").innerText = 'Edit Project:'
+    }
     let editCellEl = document.createElement("td")
     editCellEl.appendChild(editButtonEl)
 
@@ -209,10 +221,10 @@ function upsertProjectRow (project) {
         rowAllEl.appendChild(buttonCellEl)
     }
 
-    if (existingMyProject) {
-        myProjectsTableEl.replaceChild(rowEl, existingMyProject)
+    if (existingYourProject) {
+        yourProjectsTableEl.replaceChild(rowEl, existingYourProject)
     } else {
-        myProjectsTableEl.appendChild(rowEl)
+        yourProjectsTableEl.appendChild(rowEl)
     }
 
     if (existingAllProject) {
@@ -245,7 +257,13 @@ function upsertVoteRow (vote) {
     removeCellEl.appendChild(removeButtonEl)
     let editButtonEl = document.createElement("button")
     editButtonEl.appendChild(document.createTextNode('Edit'))
-    editButtonEl.onclick = () => upsertVote(vote)
+    editButtonEl.onclick = () => {
+        let form = document.querySelector("form#new_vote")
+        form.elements['projectId'].value = project.id
+        form.elements['categoryId'].value = category.id
+        form.elements['id'].value = vote.id
+        form.querySelector("button").innerText = 'Edit'
+    }
     let editCellEl = document.createElement("td")
     editCellEl.appendChild(editButtonEl)
 
@@ -263,23 +281,25 @@ function upsertVoteRow (vote) {
 }
 
 function removeOldProjects () {
-    let myProjectsRowEls = Array.from(document.querySelector("table#my_projects tr"))
-    let allProjectsRowEls = Array.from(document.querySelector("table#all_projects tr"))
+    let yourProjectsRowEls = Array.from(document.querySelectorAll("table#your_projects tr"))
+    let allProjectsRowEls = Array.from(document.querySelectorAll("table#all_projects tr"))
 
-    let myProjectIds = state.projects
+    let yourProjectIds = state.projects
         .filter(project => project.authorEmail == state.email)
         .map(project => project.id)
-    for (let rowEl of myProjectsRowEls) {
+    for (let rowEl of yourProjectsRowEls) {
         let projectId = rowEl.getAttribute("projectId")
-        if (projectId && !myProjectIds.include(projectId)) {
+        if (projectId && !yourProjectIds.includes(projectId)) {
+            console.log("Removing your row project", projectId)
             rowEl.parentNode.removeChild(rowEl)
         }
     }
 
     let allProjectIds = state.projects.map(project => project.id)
-    for (let rowEl of myProjectsRowEls) {
+    for (let rowEl of allProjectsRowEls) {
         let projectId = rowEl.getAttribute("projectId")
-        if (projectId && !allProjectIds.include(projectId)) {
+        if (projectId && !allProjectIds.includes(projectId)) {
+            console.log("Removing all row project", projectId)
             rowEl.parentNode.removeChild(rowEl)
         }
     }
@@ -378,6 +398,27 @@ function deleteVote (id) {
     sendRequest("votes", {id: id}, null, "DELETE")
 }
 
+function newProjectSubmit (form) {
+    upsertProject({
+        name: form.elements['name'].value,
+        description: form.elements['description'].value,
+        members: form.elements['members'].value,
+        slogan: form.elements['slogan'].value,
+        id: form.elements['id'].value,
+    })
+    clearNewProject(form)
+}
+
+function clearNewProject (form) {
+    form.elements['name'].value = ''
+    form.elements['description'].value = ''
+    form.elements['members'].value = ''
+    form.elements['slogan'].value = ''
+    form.elements['id'].value = ''
+    form.querySelector("button").innerText = 'Add'
+    form.querySelector("p").innerText = 'New Project:'
+}
+
         </script>
         <style>
 
@@ -415,18 +456,6 @@ table, tr, td, th {
 
             <div id="error"></div>
 
-            <p>My Projects:</p>
-            <table id="my_projects">
-                <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Members</th>
-                    <th>Slogan</th>
-                    <th>Remove</th>
-                    <th>Edit</th>
-                </tr>
-            </table>
-
             <p>All Projects (for Voting):</p>
             <table id="all_projects">
                 <tr>
@@ -447,8 +476,46 @@ table, tr, td, th {
                     <th>Edit</th>
                 </tr>
             </table>
-        </div>
 -->
+
+            <p>Your Projects:</p>
+            <table id="your_projects">
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Members</th>
+                    <th>Slogan</th>
+                    <th>Remove</th>
+                    <th>Edit</th>
+                </tr>
+            </table>
+
+            <form id="new_project" onsubmit="return false">
+                <p>New Project:</p>
+                <table>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Members</th>
+                        <th>Slogan</th>
+                        <th></th>
+                        <th></th>
+                        <th>Id</th>
+                    </tr>
+                    <tr>
+                        <td><input name="name" /></td>
+                        <td><input name="description" /></td>
+                        <td><input name="members" /></td>
+                        <td><input name="slogan" /></td>
+                        <td><button onclick="newProjectSubmit(this.form)">Add</button></td>
+                        <td><button onclick="clearNewProject(this.form)">Clear</button></td>
+                        <td><input name="id" disabled="true" /></td>
+                    </tr>
+                </table>
+            </form>
+
+        </div>
+
         <script src="https://apis.google.com/js/platform.js?onload=googleInit" async defer></script>
     </body>
 </html>

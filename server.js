@@ -34,7 +34,8 @@ const googleOAuth2Client = new OAuth2Client(CLIENT_ID)
 
 const uuidv4 = require('uuid')
 
-const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || undefined
+const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN
+const DUMP_AUTH = process.env.DUMP_AUTH
 
 
 // TODO: (ha not likely) i18n
@@ -50,6 +51,8 @@ const RESP_CODE_DUPLICATE_VOTE = 5
 const RESP_MSG_DUPLICATE_VOTE = 'Duplicate vote'
 const RESP_CODE_INVALID_DOMAIN = 6
 const RESP_MSG_INVALID_DOMAIN = 'Invalid email domain'
+const RESP_CODE_NOT_OWNER = 7
+const RESP_MSG_NOT_OWNER = 'You are not the owner!'
 
 
 const TABLE_NAME_CATEGORIES = 'HackDay.Categories'
@@ -118,7 +121,7 @@ ddbItemMap = (o, fn) =>
         )
     )
 
-function updateIdCacheItem (itemDdb, cache) {
+function updateIdCacheItem (cache, itemDdb) {
     let item = ddbItemMap(itemDdb, (v, k, i) => v.S);
     let idx = cache.findIndex(it => it.id == item.id)
     if (idx < 0) {
@@ -142,7 +145,7 @@ async function populateStateCache (tableName, cache, projection) {
         console.log(`Scan '${tableName}' Success`, data);
 
         data.Items.forEach(function(itemDdb, i, a) {
-            updateIdCacheItem(itemDdb, cache)
+            updateIdCacheItem(cache, itemDdb)
         })
     } catch (err) {
         console.log(`Scan '${tableName}' Error`, err);
@@ -211,7 +214,7 @@ async function upsertIdRow (tableName, cache, fieldValues) {
     try {
         let data = await ddb.putItem(params).promise()
         console.log(`Upsert '${tableName}' Success`, data)
-        updateIdCacheItem(params.Item, cache)
+        updateIdCacheItem(cache, params.Item)
     } catch (err) {
         console.log(`Upsert '${tableName}' Error`, err)
         return {obj: err}
@@ -246,6 +249,10 @@ async function deleteIdRow (tableName, cache, id) {
 }
 
 async function upsertProject (name, description, members, slogan, authorEmail, id = null) {
+    if (id && state.projects.some(p => p.authorEmail != authorEmail && p.id == id)) {
+        return {code: RESP_CODE_NOT_OWNER, msg: RESP_MSG_NOT_OWNER}
+    }
+
     return await upsertIdRow(
         TABLE_NAME_PROJECTS,
         state.projects,
@@ -272,6 +279,9 @@ async function upsertVote (projectId, categoryId, authorEmail, id = null) {
     )) {
         return {code: RESP_CODE_DUPLICATE_VOTE, msg: RESP_MSG_DUPLICATE_VOTE}
     }
+    if (id && state.votes.some(v => v.authorEmail != authorEmail && v.id == id)) {
+        return {code: RESP_CODE_NOT_OWNER, msg: RESP_MSG_NOT_OWNER}
+    }
 
     return await upsertIdRow(
         TABLE_NAME_VOTES,
@@ -294,6 +304,94 @@ app.use(express.static('public'))
 
 // https://stackoverflow.com/questions/10005939/how-do-i-consume-the-json-post-data-in-an-express-application
 app.use(express.json())
+
+// https://medium.com/dailyjs/rewriting-javascript-converting-an-array-of-objects-to-an-object-ec579cafbfc7
+const dictByIdOfArray = (arr) =>
+    arr.reduce((obj, item) => {
+        obj[item.id] = item
+        return obj
+    }, {})
+
+app.get('/votes/dump', async (req, res, next) => {
+    if (req.headers.authorization != DUMP_AUTH) {
+        console.log('Invalid auth token for data dump')
+        res.send('')
+        return
+    }
+
+    console.log('Votes dump')
+    let voteCounts = {}
+    let projectIdToDetails = dictByIdOfArray(state.projects)
+    let categoryIdToDetails = dictByIdOfArray(state.categories)
+
+    for (let vote of state.votes) {
+        let project = projectIdToDetails[vote.projectId]
+        let category = categoryIdToDetails[vote.categoryId]
+        if (!project) {
+            console.log(`Missing project '${projectId}' for vote '${vote.id}'!`)
+            continue
+        }
+        if (!category) {
+            console.log(`Missing category '${categoryId}' for vote '${vote.id}'!`)
+            continue
+        }
+
+        let countId = project.id + "+" + category.id
+        let oldCount = voteCounts.hasOwnProperty(countId) ? voteCounts[countId].count : 0
+        voteCounts[countId] = {
+            count: oldCount + 1,
+            project: project,
+            category: category
+        }
+    }
+
+    let data = []
+
+    voteCounts = Object.values(voteCounts)
+    voteCounts.sort((a, b) => {
+        if (a.category.name != b.category.name) {
+            return a.category.name > b.category.name ? 1 : -1
+        }
+        if (a.count > b.count) return 1
+        if (a.count < b.count) return -1
+        return 0
+    })
+
+    for (let countId in voteCounts) {
+        let count = voteCounts[countId].count
+        let project = voteCounts[countId].project
+        let category = voteCounts[countId].category
+
+        data.push([
+            category.name,
+            count,
+            project.name,
+            project.description,
+            project.members,
+            project.slogan
+        ].join("\t") + "\n")
+    }
+
+    res.send(data.join(''))
+})
+
+app.get('/projects/dump', async (req, res, next) => {
+    if (req.headers.authorization != DUMP_AUTH) {
+        console.log('Invalid auth token for data dump')
+        res.send('')
+        return
+    }
+
+    console.log('Projects dump')
+    res.send(state.projects.map(project => [
+        project.id,
+        project.name,
+        project.description,
+        project.members,
+        project.slogan,
+        project.authorEmail,
+    ].join("\t") + "\n").join(''))
+})
 
 app.use(async (req, res, next) => {
     console.log('Time: %d', Date.now())
@@ -382,8 +480,6 @@ app.delete('/votes', async (req, res, next) => {
     )
     stateDataOnSuccess(res, err)
 })
-
-// TODO: endpoint to get csv of all project category votes (counts)
 
 async function populateHackDayCategories () {
     const hackDayCategories = [
