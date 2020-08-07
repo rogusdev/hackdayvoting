@@ -53,6 +53,8 @@ const RESP_CODE_INVALID_DOMAIN = 6
 const RESP_MSG_INVALID_DOMAIN = 'Invalid email domain'
 const RESP_CODE_NOT_OWNER = 7
 const RESP_MSG_NOT_OWNER = 'You are not the owner!'
+const RESP_CODE_INVALID_DATA = 8
+const RESP_MSG_INVALID_DATA = 'Invalid data'
 
 
 const TABLE_NAME_CATEGORIES = 'HackDay.Categories'
@@ -251,6 +253,9 @@ async function deleteIdRow (tableName, cache, id) {
 async function upsertProject (name, description, members, slogan, authorEmail, id = null) {
     if (id && state.projects.some(p => p.authorEmail != authorEmail && p.id == id)) {
         return {code: RESP_CODE_NOT_OWNER, msg: RESP_MSG_NOT_OWNER}
+    }
+    if (!name) {
+        return {code: RESP_CODE_INVALID_DATA, msg: RESP_MSG_INVALID_DATA}
     }
 
     return await upsertIdRow(
