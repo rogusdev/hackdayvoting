@@ -124,7 +124,7 @@ ddbItemMap = (o, fn) =>
     )
 
 function updateIdCacheItem (cache, itemDdb) {
-    let item = ddbItemMap(itemDdb, (v, k, i) => v.S);
+    let item = ddbItemMap(itemDdb, (v, k, i) => v.S || v.N);
     let idx = cache.findIndex(it => it.id == item.id)
     if (idx < 0) {
         cache.push(item)
@@ -250,7 +250,7 @@ async function deleteIdRow (tableName, cache, id) {
     }
 }
 
-async function upsertProject (name, description, members, slogan, authorEmail, id = null) {
+async function upsertProject (name, description, members, slogan, authorEmail, createdAt = null, id = null) {
     if (id && state.projects.some(p => p.authorEmail != authorEmail && p.id == id)) {
         return {code: RESP_CODE_NOT_OWNER, msg: RESP_MSG_NOT_OWNER}
     }
@@ -267,6 +267,7 @@ async function upsertProject (name, description, members, slogan, authorEmail, i
             'members' : {S: members},
             'slogan' : {S: slogan},
             'authorEmail': {S: authorEmail},
+            'createdAt': {N: createdAt || ('' + Date.now())},
             'id' : {S: id || uuidv4()}
         }
     )
@@ -400,6 +401,7 @@ app.get('/projects/dump', async (req, res, next) => {
             project.members,
             project.slogan,
             project.authorEmail,
+            //project.createdAt,
         ].join("\t") + "\n"
     )
     res.send(HEADER.concat(projectRows).join(''))
@@ -446,6 +448,7 @@ app.post('/projects', async (req, res, next) => {
         req.body.members,
         req.body.slogan,
         res.locals.email,
+        req.body.createdAt,
         req.body.id
     )
     stateDataOnSuccess(res, err)
@@ -539,7 +542,7 @@ async function init () {
     await populateStateCache(
         TABLE_NAME_PROJECTS,
         state.projects,
-        'title, description, members, slogan, authorEmail, id'
+        'title, description, members, slogan, authorEmail, createdAt, id'
     )
     await populateStateCache(
         TABLE_NAME_VOTES,

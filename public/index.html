@@ -188,6 +188,7 @@ function upsertYourProjectRow (project) {
         form.elements['description'].value = project.description
         form.elements['members'].value = project.members
         form.elements['slogan'].value = project.slogan
+        form.elements['createdAt'].value = project.createdAt
         form.elements['id'].value = project.id
         form.querySelector("button").innerText = 'Edit'
         form.querySelector("p").innerText = 'Edit Project:'
@@ -446,6 +447,7 @@ function upsertProject (project) {
             description: project.description,
             members: project.members,
             slogan: project.slogan,
+            createdAt: project.createdAt,
             id: project.id
         }
     )
@@ -476,6 +478,7 @@ function newProjectSubmit (form) {
         description: form.elements['description'].value,
         members: form.elements['members'].value,
         slogan: form.elements['slogan'].value,
+        createdAt: form.elements['createdAt'].value,
         id: form.elements['id'].value,
     })
     clearNewProject(form)
@@ -486,6 +489,7 @@ function clearNewProject (form) {
     form.elements['description'].value = ''
     form.elements['members'].value = ''
     form.elements['slogan'].value = ''
+    form.elements['createdAt'].value = ''
     form.elements['id'].value = ''
     form.querySelector("button").innerText = 'Add'
     form.querySelector("p").innerText = 'New Project:'
@@ -570,6 +574,7 @@ table, tr, td, th {
             </div>
 
             <form id="new_project" onsubmit="return false">
+                <input name="createdAt" type="hidden" />
                 <p>New Project:</p>
                 <table>
                     <tr>
