@@ -389,14 +389,20 @@ app.get('/projects/dump', async (req, res, next) => {
     }
 
     console.log('Projects dump')
-    res.send(state.projects.map(project => [
-        project.id,
-        project.name,
-        project.description,
-        project.members,
-        project.slogan,
-        project.authorEmail,
-    ].join("\t") + "\n").join(''))
+    const HEADER = ['Winner	Timestamp	Title	Description	Members	Slogan	Author\n']
+    const projectRows = state.projects.map(
+        project => [
+            '__',
+            '0:00:00',
+            //project.id,
+            project.name,
+            project.description,
+            project.members,
+            project.slogan,
+            project.authorEmail,
+        ].join("\t") + "\n"
+    )
+    res.send(HEADER.concat(projectRows).join(''))
 })
 
 app.use(async (req, res, next) => {
