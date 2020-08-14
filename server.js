@@ -124,7 +124,7 @@ ddbItemMap = (o, fn) =>
     )
 
 function updateIdCacheItem (cache, itemDdb) {
-    let item = ddbItemMap(itemDdb, (v, k, i) => v.S || v.N);
+    let item = ddbItemMap(itemDdb, (v, k, i) => v.S || parseInt(v.N));
     let idx = cache.findIndex(it => it.id == item.id)
     if (idx < 0) {
         cache.push(item)
@@ -144,7 +144,7 @@ async function populateStateCache (tableName, cache, projection) {
 
     try {
         let data = await ddb.scan(params).promise()
-        console.log(`Scan '${tableName}' Success`, data);
+        console.log(`Scan '${tableName}' Success`);//, data
 
         data.Items.forEach(function(itemDdb, i, a) {
             updateIdCacheItem(cache, itemDdb)
@@ -193,7 +193,7 @@ async function createTablesIfNeeded (tableNames) {
     // verify all tables are present, create if not, verify categories are present, create if not
     try {
         let data = await ddb.listTables({Limit: 100}).promise()
-        console.log("List tables Success", data)
+        console.log("List tables Success")//, data
 
         let tablesToAdd =
             tableNames.filter(name => !data.TableNames.includes(name))
@@ -353,15 +353,13 @@ app.get('/votes/dump', async (req, res, next) => {
 
     let data = []
 
-    // sort desc == reversed
     voteCounts = Object.values(voteCounts)
     voteCounts.sort((a, b) => {
         if (a.category.name != b.category.name) {
-            return a.category.name < b.category.name ? 1 : -1
+            return a.category.name > b.category.name ? 1 : -1
         }
-        if (a.count < b.count) return 1
-        if (a.count > b.count) return -1
-        return 0
+        // sort desc == reversed
+        return b.count - a.count
     })
 
     for (let countId in voteCounts) {
@@ -451,6 +449,7 @@ app.post('/projects', async (req, res, next) => {
         req.body.createdAt,
         req.body.id
     )
+    sortStateProjects()
     stateDataOnSuccess(res, err)
 })
 
@@ -520,6 +519,52 @@ async function populateHackDayCategories () {
     }
 }
 
+// function sortStateProjects () {
+//     state.projects.sort((a, b) => {
+//         if ((a.createdAt && !b.createdAt) || a.createdAt > b.createdAt) return 1
+//         if ((!a.createdAt && b.createdAt) || a.createdAt < b.createdAt) return -1
+//         if (a.id > b.id) return 1
+//         if (a.id < b.id) return -1
+//         return 0
+//     })
+// }
+
+function sortStateProjects () {
+    state.projects.sort((a, b) => {
+        if (a.createdAt > b.createdAt) return 1
+        if (a.createdAt < b.createdAt) return -1
+        if (a.id > b.id) return 1
+        if (a.id < b.id) return -1
+        return 0
+    })
+}
+
+// function sortStateProjects () {
+//     state.projects.sort((a, b) => {
+//         console.log(a.createdAt && !b.createdAt)
+//         console.log(!a.createdAt && b.createdAt)
+
+//         if ((a.createdAt && !b.createdAt) || a.createdAt > b.createdAt) {
+//             console.log("a created > b")
+//             return 1
+//         }
+//         if ((!a.createdAt && b.createdAt) || a.createdAt < b.createdAt) {
+//             console.log("a created < b")
+//             return -1
+//         }
+//         if (a.id > b.id) {
+//             console.log("a id > b", a.createdAt, b.createdAt)
+//             return 1
+//         }
+//         if (a.id < b.id) {
+//             console.log("a id < b", a.createdAt, b.createdAt)
+//             return -1
+//         }
+//         console.log("a == b")
+//         return 0
+//     })
+// }
+
 
 async function init () {
     console.log(`Initializing Hack Day Voting Server...`)
@@ -537,19 +582,37 @@ async function init () {
         'title, id'
     )
     await populateHackDayCategories()
-    console.log("Hack Day Categories populated", state.categories);
+    console.log("Hack Day Categories populated");//, state.categories
 
     await populateStateCache(
         TABLE_NAME_PROJECTS,
         state.projects,
         'title, description, members, slogan, authorEmail, createdAt, id'
     )
+
+    // for (let i in state.projects) {
+    //     let t = 1597247700 - i
+    //     let p = state.projects[i]
+    //     let err = await upsertProject(
+    //         p.name,
+    //         p.description,
+    //         p.members,
+    //         p.slogan,
+    //         p.authorEmail,
+    //         ('' + p.createdAt) || '' + t + '000',
+    //         p.id
+    //     )
+    //     console.log(`updating`, p)
+    // }
+
+    sortStateProjects()
     await populateStateCache(
         TABLE_NAME_VOTES,
         state.votes,
         'projectId, categoryId, authorEmail, id'
     )
-    console.log(`Caches populated!`, state)
+    console.log(`Caches populated!`)//, state
+    //console.log(`projects`, state.projects)
 }
 
 init().then((err) => {
@@ -559,3 +622,34 @@ init().then((err) => {
         app.listen(PORT, () => console.log(`Listening on port ${PORT}!`))
     }
 })
+
+
+// state.projects = [
+//     {
+//         authorEmail: 'raghav.narain@braze.com',
+//         description: 'See the status of your braze exports',
+//         id: '389afef0-5f7b-4c1f-bd8f-8e29e9eff371',
+//         slogan: 'Why is my export taking so long?',
+//         members: 'Raghav Narain',
+//         name: 'Braze Exports Dashboard'
+//     },
+//     {
+//         authorEmail: 'chris.rogus@braze.com',
+//         slogan: 'test 01',
+//         members: 'rogus',
+//         createdAt: 1597247700909,
+//         description: 'test 01',
+//         id: '444de997-989a-46e9-b201-f294228b0fdc',
+//         name: 'test 01'
+//     },
+//     {
+//         authorEmail: 'michael.dulle@braze.com',
+//         description: 'Super simple translation layer for creating a demoable, localized Dashboard',
+//         id: 'f2e03d3a-1af5-4986-be00-6b97803d3a71',
+//         slogan: 'let translation = awesome',
+//         members: 'Mike Dulle',
+//         name: 'Localization!'
+//     },
+// ]
+// sortStateProjects()
+// console.log(`projects`, state.projects)
