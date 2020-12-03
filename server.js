@@ -1,7 +1,7 @@
 /*
 
 yarn init -y
-yarn add express google-auth-library aws-sdk
+yarn add express google-auth-library
 yarn start  # actually runs node server.js
 
 # https://stackoverflow.com/questions/7172784/how-do-i-post-json-data-with-curl
@@ -16,17 +16,6 @@ const express = require('express')
 const app = express()
 const PORT = process.env.PORT || 3000
 
-const AWS = require('aws-sdk')
-
-AWS.config.getCredentials(function(err) {
-    if (err) {
-        console.log("Failed to load AWS creds/config", err);
-    } else {
-      console.log("AWS creds/config loaded", AWS.config.credentials.accessKeyId);
-    }
-});
-AWS.config.update({region: 'us-east-1'})
-const ddb = new AWS.DynamoDB({apiVersion: '2012-08-10'})
 
 const { OAuth2Client } = require('google-auth-library')
 const CLIENT_ID = "861609598303-o00osplh8n4jidur6mr6931c8sjikjuu.apps.googleusercontent.com"
@@ -60,6 +49,22 @@ const RESP_MSG_INVALID_DATA = 'Invalid data'
 const TABLE_NAME_CATEGORIES = 'HackDay.Categories'
 const TABLE_NAME_PROJECTS = 'HackDay.Projects'
 const TABLE_NAME_VOTES = 'HackDay.Votes'
+
+let ALWAYS_AVAILABLE_CATEGORIES = ['Slogan']
+
+
+const STORAGE_PROVIDER = (process.env.STORAGE_PROVIDER || "").toLowerCase()
+const VALID_PROVIDERS = ["dynamodb", "postgres"]
+if (!VALID_PROVIDERS.includes(STORAGE_PROVIDER)) {
+    console.error('Invalid or missing storage provider', STORAGE_PROVIDER)
+    process.exit(-1)
+}
+
+const {
+    populateStateCache,
+    upsertIdRow,
+    deleteIdRow,
+} = require(`./${STORAGE_PROVIDER}.js`)
 
 
 
@@ -110,152 +115,26 @@ async function googleTokenVerify (res, idToken) {
 }
 
 
-// https://stackoverflow.com/questions/14810506/map-function-for-objects-instead-of-arrays
-ddbItemMap = (o, fn) =>
-    Object.fromEntries(
-        Object.entries(o).map(
-            ([k, v], i) => {
-                if (k == 'title') {
-                    k = 'name'
-                }
-                return [k, fn(v, k, i)]
-            }
-        )
-    )
-
-function updateIdCacheItem (cache, itemDdb) {
-    let item = ddbItemMap(itemDdb, (v, k, i) => v.S || parseInt(v.N));
-    let idx = cache.findIndex(it => it.id == item.id)
-    if (idx < 0) {
-        cache.push(item)
-    } else {
-        cache[idx] = item
-    }
-}
-
-async function populateStateCache (tableName, cache, projection) {
-    // https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/dynamodb-example-query-scan.html#dynamodb-example-table-query-scan-scanning
-    // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB.html#scan-property
-    let params = {
-        ProjectionExpression: projection,
-        TableName: tableName
-    }
-    console.log(`Scanning '${tableName}' for '${projection}'`);
-
-    try {
-        let data = await ddb.scan(params).promise()
-        console.log(`Scan '${tableName}' Success`);//, data
-
-        data.Items.forEach(function(itemDdb, i, a) {
-            updateIdCacheItem(cache, itemDdb)
-        })
-    } catch (err) {
-        console.log(`Scan '${tableName}' Error`, err);
-    }
-}
-
-async function createIdTable (name) {
-    let params = {
-        AttributeDefinitions: [
-            {
-                AttributeName: 'id',
-                AttributeType: 'S'
-            }
-        ],
-        KeySchema: [
-            {
-                AttributeName: 'id',
-                KeyType: 'HASH'
-            }
-        ],
-        ProvisionedThroughput: {
-            ReadCapacityUnits: 1,
-            WriteCapacityUnits: 1
-        },
-        TableName: name,
-        StreamSpecification: {
-            StreamEnabled: false
-        }
-    }
-
-    try {
-        let data = await ddb.createTable(params).promise()
-        console.log(`Id Table '${name}' Created`, data)
-
-        // TODO: wait until status is ACTIVE, instead of CREATING
-        // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB.html#describeTable-property
-    } catch (err) {
-        console.log(`Id Table '${name}' Create Error`, err)
-    }
-}
-
-async function createTablesIfNeeded (tableNames) {
-    // verify all tables are present, create if not, verify categories are present, create if not
-    try {
-        let data = await ddb.listTables({Limit: 100}).promise()
-        console.log("List tables Success")//, data
-
-        let tablesToAdd =
-            tableNames.filter(name => !data.TableNames.includes(name))
-        console.log("Tables to add", tablesToAdd)
-        for (let name of tablesToAdd) {
-            await createIdTable(name)
-        }
-    } catch (err) {
-        console.log("List tables Error", err)
-    }
-}
-
-// https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/dynamodb-example-table-read-write.html
-async function upsertIdRow (tableName, cache, fieldValues) {
-    const params = {
-        TableName: tableName,
-        Item: fieldValues
-    }
-
-    try {
-        let data = await ddb.putItem(params).promise()
-        console.log(`Upsert '${tableName}' Success`, data)
-        updateIdCacheItem(cache, params.Item)
-    } catch (err) {
-        console.log(`Upsert '${tableName}' Error`, err)
-        return {obj: err}
-    }
-}
-
-async function deleteIdRow (tableName, cache, id) {
-    if (!cache.find(item => item.id == id)) {
-        return `No such id found for '${tableName}'`
-    }
-
-    const params = {
-        TableName: tableName,
-        Key: {
-            'id': {S: id}
-        }
-    }
-
-    try {
-        let data = await ddb.deleteItem(params).promise()
-        console.log(`Delete '${tableName}' Success`, data)
-        let idx = cache.findIndex(item => item.id == id)
-        if (idx < 0) {
-            console.log(`Delete '${tableName}' Error: could not find idx after delete!`)
-        } else {
-            cache.splice(idx, 1)
-        }
-    } catch (err) {
-        console.log(`Delete '${tableName}' Error`, err)
-        return {obj: err}
-    }
-}
-
-async function upsertProject (name, description, members, slogan, authorEmail, createdAt = null, id = null) {
+async function upsertProject (name, description, members, slogan, categoryId, authorEmail, createdAt = null, id = null) {
     if (id && state.projects.some(p => p.authorEmail != authorEmail && p.id == id)) {
         return {code: RESP_CODE_NOT_OWNER, msg: RESP_MSG_NOT_OWNER}
     }
     if (!name) {
         return {code: RESP_CODE_INVALID_DATA, msg: RESP_MSG_INVALID_DATA}
+    }
+
+    let oldCategoryVotes = state.votes.filter(v =>
+        v.projectId == id && v.categoryId != categoryId
+            && !ALWAYS_AVAILABLE_CATEGORIES.includes(v.categoryId)
+    )
+    // no transaction here: if subsequent project update fails, we've maybe deleted valid votes
+    for (let vote of oldCategoryVotes) {
+        console.log('Delete old vote', vote)
+        await deleteIdRow(
+            TABLE_NAME_VOTES,
+            state.votes,
+            vote.id
+        )
     }
 
     return await upsertIdRow(
@@ -266,6 +145,7 @@ async function upsertProject (name, description, members, slogan, authorEmail, c
             'description' : {S: description},
             'members' : {S: members},
             'slogan' : {S: slogan},
+            'categoryId' : {S: categoryId},
             'authorEmail': {S: authorEmail},
             'createdAt': {N: createdAt || ('' + Date.now())},
             'id' : {S: id || uuidv4()}
@@ -387,8 +267,10 @@ app.get('/projects/dump', async (req, res, next) => {
         return
     }
 
+    let categoryIdToDetails = dictByIdOfArray(state.categories)
+
     console.log('Projects dump')
-    const HEADER = ['Winner	Timestamp	Title	Description	Members	Slogan	Author\n']
+    const HEADER = ['Winner	Timestamp	Title	Description	Members	Slogan  Category	Author\n']
     const projectRows = state.projects.map(
         project => [
             '__',
@@ -398,6 +280,7 @@ app.get('/projects/dump', async (req, res, next) => {
             project.description,
             project.members,
             project.slogan,
+            categoryIdToDetails[project.categoryId],
             project.authorEmail,
             //project.createdAt,
         ].join("\t") + "\n"
@@ -439,12 +322,13 @@ app.post('/state', async (req, res, next) => {
 })
 
 app.post('/projects', async (req, res, next) => {
-    console.log('Upsert project')
+    console.log('Upsert project', req.body)
     let err = await upsertProject(
         req.body.name,
         req.body.description,
         req.body.members,
         req.body.slogan,
+        req.body.categoryId,
         res.locals.email,
         req.body.createdAt,
         req.body.id
@@ -454,7 +338,7 @@ app.post('/projects', async (req, res, next) => {
 })
 
 app.post('/votes', async (req, res, next) => {
-    console.log('Upsert vote')
+    console.log('Upsert vote', req.body)
     let err = await upsertVote(
         req.body.projectId,
         req.body.categoryId,
@@ -465,7 +349,7 @@ app.post('/votes', async (req, res, next) => {
 })
 
 app.delete('/projects', async (req, res, next) => {
-    console.log('Delete project')
+    console.log('Delete project', req.body)
     let err = await deleteIdRow(
         TABLE_NAME_PROJECTS,
         state.projects,
@@ -487,7 +371,7 @@ app.delete('/projects', async (req, res, next) => {
 })
 
 app.delete('/votes', async (req, res, next) => {
-    console.log('Delete vote')
+    console.log('Delete vote', req.body)
     let err = await deleteIdRow(
         TABLE_NAME_VOTES,
         state.votes,
@@ -533,31 +417,43 @@ function sortStateProjects () {
 async function init () {
     console.log(`Initializing Hack Day Voting Server...`)
 
-    await createTablesIfNeeded([
-        TABLE_NAME_CATEGORIES,
-        TABLE_NAME_PROJECTS,
-        TABLE_NAME_VOTES,
-    ])
-    console.log(`Tables available!`)
-
     await populateStateCache(
         TABLE_NAME_CATEGORIES,
         state.categories,
-        'title, id'
+        [
+            'title',
+            'id'
+        ]
     )
     await populateHackDayCategories()
+    ALWAYS_AVAILABLE_CATEGORIES = ALWAYS_AVAILABLE_CATEGORIES
+        .map(name => state.categories.find(c => c.name == name).id)
     console.log("Hack Day Categories populated");//, state.categories
 
     await populateStateCache(
         TABLE_NAME_PROJECTS,
         state.projects,
-        'title, description, members, slogan, authorEmail, createdAt, id'
+        [
+            'title',
+            'description',
+            'members',
+            'slogan',
+            'categoryId',
+            'authorEmail',
+            'createdAt',
+            'id'
+        ]
     )
     sortStateProjects()
     await populateStateCache(
         TABLE_NAME_VOTES,
         state.votes,
-        'projectId, categoryId, authorEmail, id'
+        [
+            'projectId',
+            'categoryId',
+            'authorEmail',
+            'id'
+        ]
     )
     console.log(`Caches populated!`)//, state
     //console.log(`projects`, state.projects)

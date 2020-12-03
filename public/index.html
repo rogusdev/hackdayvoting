@@ -1,14 +1,18 @@
 <html>
     <head>
+        <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
         <title>Hack Day Projects Voting</title>
 
 <!--
 either run in this same dir:
-python -m SimpleHTTPServer 3000
+python3 -m http.server 3000
 then go to:
 http://localhost:3000/
 
-or also run the server with npm start which serves this file
+or also run the server with yarn/npm start which serves this file
+
+Make sure no ALLOWED_DOMAIN in env for localdev server to accept google token!
+
 
 https://developers.google.com/identity/sign-in/web/reference
 
@@ -36,8 +40,13 @@ const CLIENT_ID = "861609598303-o00osplh8n4jidur6mr6931c8sjikjuu.apps.googleuser
 const SERVER_URL_BASE = "http://localhost:3000/"
 const HOSTED_DOMAIN = "example.com"
 
+const ALWAYS_AVAILABLE_CATEGORIES = ['Slogan']
+
 function newState () {
     return {
+        categories: [],
+        projects: [],
+        votes: [],
         reqs: []
     }
 }
@@ -135,6 +144,7 @@ function setCategoriesInProjectsHeader () {
         'Description',
         'Members',
         'Slogan',
+        'Category',
         '--Votes--'
     ]
     for (let category of state.categories) {
@@ -149,6 +159,24 @@ function setCategoriesInProjectsHeader () {
     allProjectsHeaderRowEl.parentNode.replaceChild(newHeaderRowEl, allProjectsHeaderRowEl)
 }
 
+function setCategoriesInNewProjectCategoryDropdown () {
+    let newProjectCategoryDropdownEl =
+        document.querySelector("form#new_project table select[name='categoryId']")
+
+    while (newProjectCategoryDropdownEl.firstChild) {
+        newProjectCategoryDropdownEl.removeChild(newProjectCategoryDropdownEl.firstChild)
+    }
+
+    for (let category of state.categories) {
+        if (ALWAYS_AVAILABLE_CATEGORIES.includes(category.name)) continue
+
+        let categoryOptionEl = document.createElement("option")
+        categoryOptionEl.setAttribute("value", category.id)
+        categoryOptionEl.appendChild(document.createTextNode(category.name))
+        newProjectCategoryDropdownEl.appendChild(categoryOptionEl)
+    }
+}
+
 function createProjectRowEl (project) {
     let rowEl = document.createElement("tr")
     rowEl.setAttribute("projectId", project.id)
@@ -160,6 +188,9 @@ function createProjectRowEl (project) {
     membersCellEl.appendChild(document.createTextNode(project.members))
     let sloganCellEl = document.createElement("td")
     sloganCellEl.appendChild(document.createTextNode(project.slogan))
+    let categoryCellEl = document.createElement("td")
+    let category = state.categories.find(category => category.id == project.categoryId)
+    categoryCellEl.appendChild(document.createTextNode(category.name))
     let idCellEl = document.createElement("td")
     idCellEl.appendChild(document.createTextNode(project.id))
 
@@ -167,6 +198,7 @@ function createProjectRowEl (project) {
     rowEl.appendChild(descriptionCellEl)
     rowEl.appendChild(membersCellEl)
     rowEl.appendChild(sloganCellEl)
+    rowEl.appendChild(categoryCellEl)
 //    rowEl.appendChild(idCellEl)
 
     return rowEl
@@ -188,6 +220,7 @@ function upsertYourProjectRow (project) {
         form.elements['description'].value = project.description
         form.elements['members'].value = project.members
         form.elements['slogan'].value = project.slogan
+        form.elements['categoryId'].value = project.categoryId
         form.elements['createdAt'].value = project.createdAt
         form.elements['id'].value = project.id
         form.querySelector("button").innerText = 'Edit'
@@ -218,9 +251,14 @@ function upsertAllProjectRow (project) {
         let vote = state.votes.find(vote =>
             project.id == vote.projectId && category.id == vote.categoryId && state.email == vote.authorEmail
         )
+
         let checkButtonEl = document.createElement("input")
         checkButtonEl.type = 'checkbox'
         checkButtonEl.checked = vote != null
+        checkButtonEl.disabled =
+            !ALWAYS_AVAILABLE_CATEGORIES.includes(category.name)
+            && category.id != project.categoryId
+
         // 'var' is the absolute devil
         // https://stackoverflow.com/questions/750486/javascript-closure-inside-loops-simple-practical-example
         checkButtonEl.onclick = function () {
@@ -233,6 +271,7 @@ function upsertAllProjectRow (project) {
                 })
             }
         }
+
         let buttonCellEl = document.createElement("td")
         buttonCellEl.appendChild(checkButtonEl)
         rowAllEl.appendChild(buttonCellEl)
@@ -376,10 +415,10 @@ async function updateState (response) {
     }
 
     setCategoriesInProjectsHeader()
+    setCategoriesInNewProjectCategoryDropdown()
     state.projects.forEach(upsertProjectRow)
 //    state.votes.forEach(upsertVoteRow)
     removeOldProjects()
-    // TODO: dropdowns for categories (votes)
     // TODO: dropdowns for projects (votes)
 
     let allProjectsTitle = document.querySelector("#all_projects p")
@@ -447,6 +486,7 @@ function upsertProject (project) {
             description: project.description,
             members: project.members,
             slogan: project.slogan,
+            categoryId: project.categoryId,
             createdAt: project.createdAt,
             id: project.id
         }
@@ -478,6 +518,7 @@ function newProjectSubmit (form) {
         description: form.elements['description'].value,
         members: form.elements['members'].value,
         slogan: form.elements['slogan'].value,
+        categoryId: form.elements['categoryId'].value,
         createdAt: form.elements['createdAt'].value,
         id: form.elements['id'].value,
     })
@@ -489,6 +530,7 @@ function clearNewProject (form) {
     form.elements['description'].value = ''
     form.elements['members'].value = ''
     form.elements['slogan'].value = ''
+    form.elements['categoryId'].value = ''
     form.elements['createdAt'].value = ''
     form.elements['id'].value = ''
     form.querySelector("button").innerText = 'Add'
@@ -541,6 +583,7 @@ table, tr, td, th {
                         <th>Description</th>
                         <th>Members</th>
                         <th>Slogan</th>
+                        <th>Category</th>
                         <th>--Votes--</th>
                     </tr>
                 </table>
@@ -567,6 +610,7 @@ table, tr, td, th {
                         <th>Description</th>
                         <th>Members</th>
                         <th>Slogan</th>
+                        <th>Category</th>
                         <th>Remove</th>
                         <th>Edit</th>
                     </tr>
@@ -582,6 +626,7 @@ table, tr, td, th {
                         <th>Description</th>
                         <th>Members</th>
                         <th>Slogan</th>
+                        <th>Category</th>
                         <th></th>
                         <th></th>
                         <th>Id</th>
@@ -591,6 +636,7 @@ table, tr, td, th {
                         <td><input name="description" /></td>
                         <td><input name="members" /></td>
                         <td><input name="slogan" /></td>
+                        <td><select name="categoryId" /></td>
                         <td><button onclick="newProjectSubmit(this.form)">Add</button></td>
                         <td><button onclick="clearNewProject(this.form)">Clear</button></td>
                         <td><input name="id" disabled="true" /></td>
