@@ -96,6 +96,8 @@ function updateGoogleSigninStatus (isSignedIn) {
         console.log('Email: ' + profile.getEmail()) // This is null if the 'email' scope is not present.
         state.id = profile.getId()
         state.email = profile.getEmail()
+        state.isAdmin = (state.email == "admin@example.com")
+        showHideAdminTools()
 
         let helloUserElem = document.getElementById("hello-user")
         helloUserElem.getElementsByTagName("img")[0]
@@ -137,6 +139,17 @@ function googleSignOut () {
     })
 }
 
+function showHideAdminTools () {
+    console.log(`show hide admin tools ${state.isAdmin}`)
+
+    let saveOrderDiv = document.querySelector("div#save_order")
+    saveOrderDiv.style.display = state.isAdmin ? "block" : "none"
+
+    let orderButtonSpans = document.querySelectorAll("span.order_button")
+    let display = state.isAdmin ? "inline" : "none"
+    orderButtonSpans.forEach(el => el.style.display = display)
+}
+
 function setCategoriesInProjectsHeader () {
     let allProjectsHeaderRowEl = document.querySelector("#all_projects table tr")
     let headerCells = [
@@ -167,7 +180,8 @@ function setCategoriesInNewProjectCategoryDropdown () {
         newProjectCategoryDropdownEl.removeChild(newProjectCategoryDropdownEl.firstChild)
     }
 
-    for (let category of state.categories) {
+    const emptyCategory = [{ name: "--", id: "" }]
+    for (let category of emptyCategory.concat(state.categories)) {
         if (ALWAYS_AVAILABLE_CATEGORIES.includes(category.name)) continue
 
         let categoryOptionEl = document.createElement("option")
@@ -181,16 +195,16 @@ function createProjectRowEl (project) {
     let rowEl = document.createElement("tr")
     rowEl.setAttribute("projectId", project.id)
     let nameCellEl = document.createElement("td")
-    nameCellEl.appendChild(document.createTextNode(project.name))
+    nameCellEl.appendChild(document.createTextNode(project.name || ""))
     let descriptionCellEl = document.createElement("td")
-    descriptionCellEl.appendChild(document.createTextNode(project.description))
+    descriptionCellEl.appendChild(document.createTextNode(project.description || ""))
     let membersCellEl = document.createElement("td")
-    membersCellEl.appendChild(document.createTextNode(project.members))
+    membersCellEl.appendChild(document.createTextNode(project.members || ""))
     let sloganCellEl = document.createElement("td")
-    sloganCellEl.appendChild(document.createTextNode(project.slogan))
+    sloganCellEl.appendChild(document.createTextNode(project.slogan || ""))
     let categoryCellEl = document.createElement("td")
     let category = state.categories.find(category => category.id == project.categoryId)
-    categoryCellEl.appendChild(document.createTextNode(category.name))
+    categoryCellEl.appendChild(document.createTextNode(category.name || ""))
     let idCellEl = document.createElement("td")
     idCellEl.appendChild(document.createTextNode(project.id))
 
@@ -216,13 +230,14 @@ function upsertYourProjectRow (project) {
     editButtonEl.appendChild(document.createTextNode('Edit'))
     editButtonEl.onclick = () => {
         let form = document.querySelector("form#new_project")
-        form.elements['name'].value = project.name
-        form.elements['description'].value = project.description
-        form.elements['members'].value = project.members
-        form.elements['slogan'].value = project.slogan
-        form.elements['categoryId'].value = project.categoryId
-        form.elements['createdAt'].value = project.createdAt
-        form.elements['id'].value = project.id
+        form.elements['name'].value = project.name || ""
+        form.elements['description'].value = project.description || ""
+        form.elements['members'].value = project.members || ""
+        form.elements['slogan'].value = project.slogan || ""
+        form.elements['categoryId'].value = project.categoryId || ""
+        form.elements['order'].value = project.order || "-1"
+        form.elements['createdAt'].value = project.createdAt || ""
+        form.elements['id'].value = project.id || ""
         form.querySelector("button").innerText = 'Edit'
         form.querySelector("p").innerText = 'Edit Project:'
     }
@@ -239,6 +254,8 @@ function upsertYourProjectRow (project) {
     } else {
         yourProjectsTableEl.appendChild(rowEl)
     }
+
+    return rowEl
 }
 
 function upsertAllProjectRow (project) {
@@ -284,13 +301,57 @@ function upsertAllProjectRow (project) {
     } else {
         allProjectsTableEl.appendChild(rowAllEl)
     }
+
+    return rowAllEl
 }
 
-function upsertProjectRow (project) {
+function addOrderButtons (rowAllEl, order) {
+    let orderUpButton = document.createElement("span")
+    orderUpButton.appendChild(document.createTextNode("\u25B2"))
+    orderUpButton.classList.add("order_button");
+    orderUpButton.onclick = function () {
+        if (order < 1) return
+
+        let tmp = state.projects[order - 1]
+        state.projects[order - 1] = state.projects[order]
+        state.projects[order] = tmp
+
+        let allProjectsTableEl = document.querySelector("#all_projects table")
+        let prevAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order - 1].id+'"]')
+        let nextAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order].id+'"]')
+        allProjectsTableEl.insertBefore(prevAllProject, nextAllProject)
+    }
+
+    let orderDownButton = document.createElement("span")
+    orderDownButton.appendChild(document.createTextNode("\u25BC"))
+    orderDownButton.classList.add("order_button");
+    orderDownButton.onclick = function () {
+        if (order >= state.projects.length - 1) return
+
+        let tmp = state.projects[order + 1]
+        state.projects[order + 1] = state.projects[order]
+        state.projects[order] = tmp
+
+        let allProjectsTableEl = document.querySelector("#all_projects table")
+        let prevAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order].id+'"]')
+        let nextAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order + 1].id+'"]')
+        allProjectsTableEl.insertBefore(prevAllProject, nextAllProject)
+    }
+
+    let el = rowAllEl.querySelector("tr td:nth-of-type(6)")
+    console.log("rowAllEl's nameEl", rowAllEl, el, el.textContent)
+    el.appendChild(orderUpButton)
+    el.appendChild(orderDownButton)
+    console.log("appended buttons!", orderUpButton, orderDownButton)
+    showHideAdminTools()
+}
+
+function upsertProjectRow (project, order) {
     if (project.authorEmail == state.email) {
         upsertYourProjectRow(project)
     }
-    upsertAllProjectRow(project)
+    let rowAllEl = upsertAllProjectRow(project)
+    addOrderButtons(rowAllEl, order)
 }
 
 function upsertVoteRow (vote) {
@@ -487,6 +548,7 @@ function upsertProject (project) {
             members: project.members,
             slogan: project.slogan,
             categoryId: project.categoryId,
+            order: project.order,
             createdAt: project.createdAt,
             id: project.id
         }
@@ -494,7 +556,11 @@ function upsertProject (project) {
 }
 
 function deleteProject (id) {
-    sendRequest("projects", {id: id}, null, "DELETE")
+    sendRequest("projects", { id: id }, null, "DELETE")
+}
+
+function saveProjectOrder () {
+    sendRequest("projects/order", { projectIds: state.projects.map(p => p.id) })
 }
 
 function upsertVote (vote) {
@@ -509,20 +575,33 @@ function upsertVote (vote) {
 }
 
 function deleteVote (id) {
-    sendRequest("votes", {id: id}, null, "DELETE")
+    sendRequest("votes", { id: id }, null, "DELETE")
 }
 
 function newProjectSubmit (form) {
-    upsertProject({
-        name: form.elements['name'].value,
-        description: form.elements['description'].value,
-        members: form.elements['members'].value,
-        slogan: form.elements['slogan'].value,
-        categoryId: form.elements['categoryId'].value,
-        createdAt: form.elements['createdAt'].value,
-        id: form.elements['id'].value,
-    })
-    clearNewProject(form)
+    if (!form.elements['name'].value) {
+        alert('Must have name!')
+    }
+    else if (!form.elements['members'].value) {
+        alert('Must have members!')
+    }
+    else if (!form.elements['categoryId'].value) {
+        alert('Must have category!')
+    }
+    else {
+        upsertProject({
+            name: form.elements['name'].value,
+            description: form.elements['description'].value,
+            members: form.elements['members'].value,
+            slogan: form.elements['slogan'].value,
+            categoryId: form.elements['categoryId'].value,
+            order: form.elements['order'].value,
+            createdAt: form.elements['createdAt'].value,
+            id: form.elements['id'].value,
+        })
+
+        clearNewProject(form)
+    }
 }
 
 function clearNewProject (form) {
@@ -531,6 +610,7 @@ function clearNewProject (form) {
     form.elements['members'].value = ''
     form.elements['slogan'].value = ''
     form.elements['categoryId'].value = ''
+    form.elements['order'].value = '-1'
     form.elements['createdAt'].value = ''
     form.elements['id'].value = ''
     form.querySelector("button").innerText = 'Add'
@@ -547,6 +627,18 @@ function clearNewProject (form) {
 table, tr, td, th {
     border: 1px solid black;
     padding: 3px;
+}
+
+div#save_order, span.order_button {
+    display: none;
+}
+
+span.order_button {
+    cursor: "pointer";
+}
+
+span.order_button:hover {
+    color: "green";
 }
 
         </style>
@@ -588,6 +680,9 @@ table, tr, td, th {
                     </tr>
                 </table>
             </div>
+
+            <div id="save_order"><a href="#" onclick="saveProjectOrder();">Save Project Order</a></div>
+
 <!--
             <div id="my_votes">
                 <p>My Votes</p>
@@ -618,6 +713,7 @@ table, tr, td, th {
             </div>
 
             <form id="new_project" onsubmit="return false">
+                <input name="order" type="hidden" value="-1" />
                 <input name="createdAt" type="hidden" />
                 <p>New Project:</p>
                 <table>

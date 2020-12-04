@@ -16,10 +16,10 @@ Frontend can run from the backend container because of express static (/ directs
 Could run the frontend html in its own nginx:alpine docker container, and the backend in its own dedicated nodejs docker container
 
 
-ssh chris@chrisrogus.com "cd ~/docker-apps/hackdayvoting/ && docker rm -f hackdayvoting && docker build -t hackdayvoting . && docker run -d --restart=always --env-file .env --network=www -l 'caddy'='hackdayvoting.chrisrogus.com' -l 'caddy.reverse_proxy'='\$CONTAINER_IP:3000' --name hackdayvoting hackdayvoting"
-
 scp *.js chris@chrisrogus.com:~/docker-apps/hackdayvoting/
 scp -r public chris@chrisrogus.com:~/docker-apps/hackdayvoting/
+
+ssh chris@chrisrogus.com "cd ~/docker-apps/hackdayvoting/ && docker rm -f hackdayvoting && docker build -t hackdayvoting . && docker run -d --restart=always --env-file .env --network=www -l 'caddy'='hackdayvoting.chrisrogus.com' -l 'caddy.reverse_proxy'='\$CONTAINER_IP:3000' --name hackdayvoting hackdayvoting"
 
 ssh chris@chrisrogus.com "docker logs -f hackdayvoting"
 ssh chris@chrisrogus.com "cat ~/docker-apps/hackdayvoting/.env"
@@ -32,3 +32,5 @@ sed -i 's|const SERVER_URL_BASE = "http://localhost:3000/"|const SERVER_URL_BASE
 sed -i 's|//hosted_domain: HOSTED_DOMAIN,|hosted_domain: HOSTED_DOMAIN,|' public/index.html
 sed -i 's|json.data.categories\b|json.data.categories.map(c => ({id: c.id, name: (c.name == "Company" ? "Product" : c.name == "Personal" ? "Rockstar" : c.name) }))|' public/index.html
 sed -i 's|const HOSTED_DOMAIN = "example.com"|const HOSTED_DOMAIN = "OTHER.com"|' public/index.html
+sed -i 's|state.email == "admin@example.com"|state.email == "other@example.com"|' public/index.html
+

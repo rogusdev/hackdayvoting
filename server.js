@@ -115,16 +115,64 @@ async function googleTokenVerify (res, idToken) {
 }
 
 
-async function upsertProject (name, description, members, slogan, categoryId, authorEmail, createdAt = null, id = null) {
-    if (id && state.projects.some(p => p.authorEmail != authorEmail && p.id == id)) {
+async function updateOrder (cache, ids, upsertRow) {
+    for (let i in ids) {
+        let j = cache.findIndex(r => r.id == ids[i])
+        if (j < 0) {
+            // ignore any rows that are no longer present
+        } else if (j == i) {
+            // no swap needed, just update order if not already there
+            if (cache[i].order != i) {
+                cache[i].order = i
+                upsertRow(cache[i])
+            }
+        } else {
+            // swap the rows that have the current idx and the desired idx
+            let tmp = cache[i]
+            cache[i] = cache[j]
+            cache[j] = tmp
+
+            if (cache[i].order != i) {
+                cache[i].order = i
+                upsertRow(cache[i])
+            }
+            if (cache[j].order != j) {
+                cache[j].order = j
+                upsertRow(cache[j])
+            }
+        }
+    }
+}
+
+
+async function upsertProjectRow (project) {
+    return await upsertIdRow(
+        TABLE_NAME_PROJECTS,
+        state.projects,
+        {
+            'title' : {S: project.name},
+            'description' : {S: project.description},
+            'members' : {S: project.members},
+            'slogan' : {S: project.slogan},
+            'categoryId' : {S: project.categoryId},
+            'authorEmail': {S: project.authorEmail},
+            'sort': {N: '' + project.order},
+            'createdAt': {N: '' + project.createdAt || ('' + Date.now())},
+            'id' : {S: project.id || uuidv4()}
+        }
+    )
+}
+
+async function upsertProject (project) {
+    if (project.id && state.projects.some(p => p.authorEmail != project.authorEmail && p.id == project.id)) {
         return {code: RESP_CODE_NOT_OWNER, msg: RESP_MSG_NOT_OWNER}
     }
-    if (!name) {
+    if (!project.name) {
         return {code: RESP_CODE_INVALID_DATA, msg: RESP_MSG_INVALID_DATA}
     }
 
     let oldCategoryVotes = state.votes.filter(v =>
-        v.projectId == id && v.categoryId != categoryId
+        v.projectId == project.id && v.categoryId != project.categoryId
             && !ALWAYS_AVAILABLE_CATEGORIES.includes(v.categoryId)
     )
     // no transaction here: if subsequent project update fails, we've maybe deleted valid votes
@@ -137,20 +185,7 @@ async function upsertProject (name, description, members, slogan, categoryId, au
         )
     }
 
-    return await upsertIdRow(
-        TABLE_NAME_PROJECTS,
-        state.projects,
-        {
-            'title' : {S: name},
-            'description' : {S: description},
-            'members' : {S: members},
-            'slogan' : {S: slogan},
-            'categoryId' : {S: categoryId},
-            'authorEmail': {S: authorEmail},
-            'createdAt': {N: createdAt || ('' + Date.now())},
-            'id' : {S: id || uuidv4()}
-        }
-    )
+    return upsertProjectRow(project)
 }
 
 async function upsertVote (projectId, categoryId, authorEmail, id = null) {
@@ -321,18 +356,31 @@ app.post('/state', async (req, res, next) => {
     sendStateData(res)
 })
 
+app.post('/projects/order', async (req, res, next) => {
+    console.log('Order projects', req.body)
+    let err = await updateOrder(
+        state.projects,
+        req.body.projectIds,
+        upsertProjectRow
+    )
+    sortStateProjects()
+    stateDataOnSuccess(res, err)
+})
+
 app.post('/projects', async (req, res, next) => {
     console.log('Upsert project', req.body)
-    let err = await upsertProject(
-        req.body.name,
-        req.body.description,
-        req.body.members,
-        req.body.slogan,
-        req.body.categoryId,
-        res.locals.email,
-        req.body.createdAt,
-        req.body.id
-    )
+    let order = req.body.order < 0 ? '' + state.projects.length : req.body.order
+    let err = await upsertProject({
+        name: req.body.name,
+        description: req.body.description,
+        members: req.body.members,
+        slogan: req.body.slogan,
+        categoryId: req.body.categoryId,
+        authorEmail: res.locals.email,
+        order: order,
+        createdAt: req.body.createdAt,
+        id: req.body.id
+    })
     sortStateProjects()
     stateDataOnSuccess(res, err)
 })
@@ -405,6 +453,8 @@ async function populateHackDayCategories () {
 
 function sortStateProjects () {
     state.projects.sort((a, b) => {
+        if (a.order > b.order) return 1
+        if (a.order < b.order) return -1
         if (a.createdAt > b.createdAt) return 1
         if (a.createdAt < b.createdAt) return -1
         if (a.id > b.id) return 1
@@ -440,6 +490,7 @@ async function init () {
             'slogan',
             'categoryId',
             'authorEmail',
+            'sort',
             'createdAt',
             'id'
         ]

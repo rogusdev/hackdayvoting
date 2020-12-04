@@ -28,6 +28,10 @@ ddbItemMap = (o, fn) =>
                 if (k == 'title') {
                     k = 'name'
                 }
+                // order and position and index all reserved...
+                if (k == 'sort') {
+                    k = 'order'
+                }
                 return [k, fn(v, k, i)]
             }
         )
