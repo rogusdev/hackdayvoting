@@ -140,14 +140,9 @@ function googleSignOut () {
 }
 
 function showHideAdminTools () {
-    console.log(`show hide admin tools ${state.isAdmin}`)
-
-    let saveOrderDiv = document.querySelector("div#save_order")
-    saveOrderDiv.style.display = state.isAdmin ? "block" : "none"
-
-    let orderButtonSpans = document.querySelectorAll("span.order_button")
-    let display = state.isAdmin ? "inline" : "none"
-    orderButtonSpans.forEach(el => el.style.display = display)
+    let adminOnlyDiv = document.querySelectorAll("div.admin_only")
+    let display = state.isAdmin ? "block" : "none"
+    adminOnlyDiv.forEach(el => el.style.display = display)
 }
 
 function setCategoriesInProjectsHeader () {
@@ -294,6 +289,8 @@ function upsertAllProjectRow (project) {
         rowAllEl.appendChild(buttonCellEl)
     }
 
+    addOrderButtons(rowAllEl)
+
     let allProjectsTableEl = document.querySelector("#all_projects table")
     let existingAllProject = allProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
     if (existingAllProject) {
@@ -305,53 +302,73 @@ function upsertAllProjectRow (project) {
     return rowAllEl
 }
 
-function addOrderButtons (rowAllEl, order) {
-    let orderUpButton = document.createElement("span")
-    orderUpButton.appendChild(document.createTextNode("\u25B2"))
-    orderUpButton.classList.add("order_button");
-    orderUpButton.onclick = function () {
-        if (order < 1) return
-
-        let tmp = state.projects[order - 1]
-        state.projects[order - 1] = state.projects[order]
-        state.projects[order] = tmp
-
-        let allProjectsTableEl = document.querySelector("#all_projects table")
-        let prevAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order - 1].id+'"]')
-        let nextAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order].id+'"]')
-        allProjectsTableEl.insertBefore(prevAllProject, nextAllProject)
+function shiftProject (thisProjectRowEl, dist) {
+    if (state.refresh) {
+        clearRefresh()
+//        alert('Stopped refresh! Remember to start it again after saving')
     }
 
-    let orderDownButton = document.createElement("span")
-    orderDownButton.appendChild(document.createTextNode("\u25BC"))
-    orderDownButton.classList.add("order_button");
-    orderDownButton.onclick = function () {
-        if (order >= state.projects.length - 1) return
-
-        let tmp = state.projects[order + 1]
-        state.projects[order + 1] = state.projects[order]
-        state.projects[order] = tmp
-
-        let allProjectsTableEl = document.querySelector("#all_projects table")
-        let prevAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order].id+'"]')
-        let nextAllProject = allProjectsTableEl.querySelector('tr[projectId="'+state.projects[order + 1].id+'"]')
-        allProjectsTableEl.insertBefore(prevAllProject, nextAllProject)
+    let thisProjectId = thisProjectRowEl.getAttribute("projectId")
+    let thisProjectIndex = state.projects.findIndex(project => project.id == thisProjectId)
+    if (thisProjectIndex != thisProjectRowEl.rowIndex - 1) {
+        console.log(`This project index ${thisProjectIndex} and row index ${thisProjectRowEl.rowIndex} do not match for ${thisProjectId}!`)
+        return
     }
 
-    let el = rowAllEl.querySelector("tr td:nth-of-type(6)")
-    console.log("rowAllEl's nameEl", rowAllEl, el, el.textContent)
-    el.appendChild(orderUpButton)
-    el.appendChild(orderDownButton)
-    console.log("appended buttons!", orderUpButton, orderDownButton)
+    if (dist > 0 && thisProjectIndex < dist) dist = thisProjectIndex
+    if (dist < 0 && thisProjectIndex >= state.projects.length + dist) dist = thisProjectIndex - state.projects.length + 1
+
+    let otherProjectIndex = thisProjectIndex - (dist > 0 ? 1 : -1)
+    let otherProjectId = state.projects[otherProjectIndex].id
+    let otherProjectRowEl = thisProjectRowEl.parentNode.querySelector('tr[projectId="'+otherProjectId+'"]')
+    if (otherProjectIndex != otherProjectRowEl.rowIndex - 1) {
+        console.log(`Other project index ${otherProjectIndex} and row index ${otherProjectRowEl.rowIndex} do not match for ${otherProjectId}!`)
+        console.log(`... for this project index ${thisProjectIndex} and row index ${thisProjectRowEl.rowIndex} of ${thisProjectId} shifting ${dist}!`)
+        console.log(state.projects.map(p => p.description))
+        return
+    }
+
+    let tmp = state.projects[otherProjectIndex]
+    state.projects[otherProjectIndex] = state.projects[thisProjectIndex]
+    state.projects[thisProjectIndex] = tmp
+
+//    console.log(`After shift, this: ${state.projects[otherProjectIndex].id} other: ${state.projects[thisProjectIndex].id}`)
+
+    if (dist < 0) {
+        thisProjectRowEl.parentNode.insertBefore(otherProjectRowEl, thisProjectRowEl)
+        if (dist < -1) shiftProject(thisProjectRowEl, dist + 1)
+    }
+    else if (dist > 0) {
+        thisProjectRowEl.parentNode.insertBefore(thisProjectRowEl, otherProjectRowEl)
+        if (dist > 1) shiftProject(thisProjectRowEl, dist - 1)
+    }
+}
+
+function createOrderButton (rowAllEl, text, dist) {
+    let button = document.createElement("span")
+    button.appendChild(document.createTextNode(text))
+    button.classList.add("order_button");
+    button.onclick = () => shiftProject(rowAllEl, dist)
+    return button
+}
+
+function addOrderButtons (rowAllEl) {
+    let cellEl = rowAllEl.querySelector("tr td:nth-of-type(6)")
+    let el = document.createElement("div")
+    el.classList.add("admin_only");
+    el.appendChild(createOrderButton(rowAllEl, "\u21C8", state.projects.length))
+    el.appendChild(createOrderButton(rowAllEl, "\u25B2", 1))
+    el.appendChild(createOrderButton(rowAllEl, "\u25BC", -1))
+    el.appendChild(createOrderButton(rowAllEl, "\u21CA", -state.projects.length))
+    cellEl.appendChild(el)
     showHideAdminTools()
 }
 
-function upsertProjectRow (project, order) {
+function upsertProjectRow (project) {
     if (project.authorEmail == state.email) {
         upsertYourProjectRow(project)
     }
-    let rowAllEl = upsertAllProjectRow(project)
-    addOrderButtons(rowAllEl, order)
+    upsertAllProjectRow(project)
 }
 
 function upsertVoteRow (vote) {
@@ -429,6 +446,14 @@ function clearRefresh () {
     if (state.refresh) {
         clearTimeout(state.refresh)
         delete state.refresh
+        document.querySelector("#not_refresh").style.display = 'block'
+    }
+}
+
+function startRefresh () {
+    if (!state.refresh) {
+        state.refresh = setTimeout(getState, 30000 + Math.floor(Math.random() * 10000))
+        document.querySelector("#not_refresh").style.display = 'none'
     }
 }
 
@@ -467,7 +492,7 @@ async function updateState (response) {
         state.refresh = setTimeout(googleInit, 30000 + Math.floor(Math.random() * 10000))
     } else {
         setDisableInputs(false)
-        state.refresh = setTimeout(getState, 30000 + Math.floor(Math.random() * 10000))
+        startRefresh()
 
         // state.reqs.shift()
         state.projects = json.data.projects
@@ -491,6 +516,7 @@ async function updateState (response) {
 }
 
 function sendRequest (path, data = {}, cb = null, method = "POST") {
+    // everything MUST be POST (or DELETE) because sending oauth id token in body
     data.id_token = state.id_token
     // https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
     let req = {
@@ -561,6 +587,19 @@ function deleteProject (id) {
 
 function saveProjectOrder () {
     sendRequest("projects/order", { projectIds: state.projects.map(p => p.id) })
+
+    if (!state.refresh) {
+        startRefresh()
+//        alert('Started refresh after saving')
+    }
+}
+
+function dumpVotes () {
+    sendRequest("votes/dump")
+}
+
+function dumpProjects () {
+    sendRequest("projects/dump")
 }
 
 function upsertVote (vote) {
@@ -624,21 +663,26 @@ function clearNewProject (form) {
     color: red;
 }
 
+#not_refresh {
+    color: blue;
+    font-weight: bold;
+}
+
 table, tr, td, th {
     border: 1px solid black;
     padding: 3px;
 }
 
-div#save_order, span.order_button {
+div.admin_only {
     display: none;
 }
 
-span.order_button {
-    cursor: "pointer";
+span.order_button, div.admin_actions div {
+    cursor: pointer;
 }
 
-span.order_button:hover {
-    color: "green";
+span.order_button:hover, div.admin_actions div:hover {
+    color: green;
 }
 
         </style>
@@ -665,7 +709,10 @@ span.order_button:hover {
 <!--
             <div><a href="#" onclick="test();">Test</a></div>
 -->
+            <div></div>
             <div id="error"></div>
+
+            <div id="not_refresh">Not currently refreshing state!!</div>
 
             <div id="all_projects">
                 <p>All Projects (for Voting):</p>
@@ -681,7 +728,13 @@ span.order_button:hover {
                 </table>
             </div>
 
-            <div id="save_order"><a href="#" onclick="saveProjectOrder();">Save Project Order</a></div>
+            <div class="admin_only admin_actions">
+                <div onclick="saveProjectOrder()">Save Project Order</div>
+                <div onclick="dumpVotes()">Dump Votes</div>
+                <div onclick="dumpProjects()">Dump Projects</div>
+                <div onclick="clearRefresh()">Stop Refresh</div>
+                <div onclick="startRefresh()">Start Refresh</div>
+            </div>
 
 <!--
             <div id="my_votes">
