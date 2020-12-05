@@ -24,7 +24,7 @@ const googleOAuth2Client = new OAuth2Client(CLIENT_ID)
 const uuidv4 = require('uuid')
 
 const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN
-const DUMP_AUTH = process.env.DUMP_AUTH
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL
 
 
 // TODO: (ha not likely) i18n
@@ -82,7 +82,7 @@ function sendStateData (res) {
 
 function sendErr (res, err) {
     console.log("Sending err", err)
-    res.send({err: err})
+    res.send({ err: err })
 }
 
 function stateDataOnSuccess (res, err) {
@@ -233,96 +233,6 @@ const dictByIdOfArray = (arr) =>
         return obj
     }, {})
 
-app.get('/votes/dump', async (req, res, next) => {
-    if (req.headers.authorization != DUMP_AUTH) {
-        console.log('Invalid auth token for data dump')
-        res.send('')
-        return
-    }
-
-    console.log('Votes dump')
-    let voteCounts = {}
-    let projectIdToDetails = dictByIdOfArray(state.projects)
-    let categoryIdToDetails = dictByIdOfArray(state.categories)
-
-    for (let vote of state.votes) {
-        let project = projectIdToDetails[vote.projectId]
-        let category = categoryIdToDetails[vote.categoryId]
-        if (!project) {
-            console.log(`Missing project '${projectId}' for vote '${vote.id}'!`)
-            continue
-        }
-        if (!category) {
-            console.log(`Missing category '${categoryId}' for vote '${vote.id}'!`)
-            continue
-        }
-
-        let countId = project.id + "+" + category.id
-        let oldCount = voteCounts.hasOwnProperty(countId) ? voteCounts[countId].count : 0
-        voteCounts[countId] = {
-            count: oldCount + 1,
-            project: project,
-            category: category
-        }
-    }
-
-    let data = []
-
-    voteCounts = Object.values(voteCounts)
-    voteCounts.sort((a, b) => {
-        if (a.category.name != b.category.name) {
-            return a.category.name > b.category.name ? 1 : -1
-        }
-        // sort desc == reversed
-        return b.count - a.count
-    })
-
-    for (let countId in voteCounts) {
-        let count = voteCounts[countId].count
-        let project = voteCounts[countId].project
-        let category = voteCounts[countId].category
-
-        data.push([
-            category.name,
-            count,
-            project.name,
-            project.description,
-            project.members,
-            project.slogan
-        ].join("\t") + "\n")
-    }
-
-    res.send(data.join(''))
-})
-
-app.get('/projects/dump', async (req, res, next) => {
-    if (req.headers.authorization != DUMP_AUTH) {
-        console.log('Invalid auth token for data dump')
-        res.send('')
-        return
-    }
-
-    let categoryIdToDetails = dictByIdOfArray(state.categories)
-
-    console.log('Projects dump')
-    const HEADER = ['Winner	Timestamp	Title	Description	Members	Slogan  Category	Author\n']
-    const projectRows = state.projects.map(
-        project => [
-            '__',
-            '0:00:00',
-            //project.id,
-            project.name,
-            project.description,
-            project.members,
-            project.slogan,
-            categoryIdToDetails[project.categoryId],
-            project.authorEmail,
-            //project.createdAt,
-        ].join("\t") + "\n"
-    )
-    res.send(HEADER.concat(projectRows).join(''))
-})
-
 app.use(async (req, res, next) => {
     console.log('Time: %d', Date.now())
     if (!req.body || !req.body.id_token) {
@@ -354,17 +264,6 @@ app.post('/state', async (req, res, next) => {
     console.log('Get state')
     state.count++
     sendStateData(res)
-})
-
-app.post('/projects/order', async (req, res, next) => {
-    console.log('Order projects', req.body)
-    let err = await updateOrder(
-        state.projects,
-        req.body.projectIds,
-        upsertProjectRow
-    )
-    sortStateProjects()
-    stateDataOnSuccess(res, err)
 })
 
 app.post('/projects', async (req, res, next) => {
@@ -427,6 +326,106 @@ app.delete('/votes', async (req, res, next) => {
     )
     stateDataOnSuccess(res, err)
 })
+
+
+app.use(async (req, res, next) => {
+    if (res.locals.email == ADMIN_EMAIL) next()
+    else
+    {
+        console.log('Invalid email for admin actions')
+        res.send({ err: 'No' })
+    }
+})
+
+app.post('/projects/order', async (req, res, next) => {
+    console.log('Order projects', req.body)
+    let err = await updateOrder(
+        state.projects,
+        req.body.projectIds,
+        upsertProjectRow
+    )
+    sortStateProjects()
+    stateDataOnSuccess(res, err)
+})
+
+app.post('/votes/dump', async (req, res, next) => {
+    console.log('Votes dump')
+    let voteCounts = {}
+    let projectIdToDetails = dictByIdOfArray(state.projects)
+    let categoryIdToDetails = dictByIdOfArray(state.categories)
+
+    for (let vote of state.votes) {
+        let project = projectIdToDetails[vote.projectId]
+        let category = categoryIdToDetails[vote.categoryId]
+        if (!project) {
+            console.log(`Missing project '${projectId}' for vote '${vote.id}'!`)
+            continue
+        }
+        if (!category) {
+            console.log(`Missing category '${categoryId}' for vote '${vote.id}'!`)
+            continue
+        }
+
+        let countId = project.id + "+" + category.id
+        let oldCount = voteCounts.hasOwnProperty(countId) ? voteCounts[countId].count : 0
+        voteCounts[countId] = {
+            count: oldCount + 1,
+            project: project,
+            category: category
+        }
+    }
+
+    let data = []
+
+    voteCounts = Object.values(voteCounts)
+    voteCounts.sort((a, b) => {
+        if (a.category.name != b.category.name) {
+            return a.category.name > b.category.name ? 1 : -1
+        }
+        // sort desc == reversed
+        return b.count - a.count
+    })
+
+    for (let countId in voteCounts) {
+        let count = voteCounts[countId].count
+        let project = voteCounts[countId].project
+        let category = voteCounts[countId].category
+
+        data.push([
+            category.name,
+            count,
+            project.name,
+            project.description,
+            project.members,
+            project.slogan
+        ].join("\t") + "\n")
+    }
+
+    res.send(data.join(''))
+})
+
+app.post('/projects/dump', async (req, res, next) => {
+    let categoryIdToDetails = dictByIdOfArray(state.categories)
+
+    console.log('Projects dump')
+    const HEADER = ['Winner	Timestamp	Title	Description	Members	Slogan  Category	Author\n']
+    const projectRows = state.projects.map(
+        project => [
+            '__',
+            '0:00:00',
+            //project.id,
+            project.name,
+            project.description,
+            project.members,
+            project.slogan,
+            categoryIdToDetails[project.categoryId],
+            project.authorEmail,
+            //project.createdAt,
+        ].join("\t") + "\n"
+    )
+    res.send(HEADER.concat(projectRows).join(''))
+})
+
 
 async function populateHackDayCategories () {
     const hackDayCategories = [
