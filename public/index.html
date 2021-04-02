@@ -289,8 +289,6 @@ function upsertAllProjectRow (project) {
         rowAllEl.appendChild(buttonCellEl)
     }
 
-    addOrderButtons(rowAllEl)
-
     let allProjectsTableEl = document.querySelector("#all_projects table")
     let existingAllProject = allProjectsTableEl.querySelector('tr[projectId="'+project.id+'"]')
     if (existingAllProject) {
@@ -298,6 +296,9 @@ function upsertAllProjectRow (project) {
     } else {
         allProjectsTableEl.appendChild(rowAllEl)
     }
+
+    // needs to be after added to document tree so query will find
+    addOrderButtons(rowAllEl)
 
     return rowAllEl
 }
