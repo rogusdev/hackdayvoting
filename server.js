@@ -448,6 +448,7 @@ async function populateHackDayCategories () {
             }
         )
     }
+    console.log("Categories", state.categories)
 }
 
 function sortStateProjects () {
