@@ -395,13 +395,15 @@ app.post('/votes/dump', async (req, res, next) => {
             category.name,
             count,
             project.name,
-            project.description,
             project.members,
+            project.description,
             project.slogan
         ].join("\t") + "\n")
     }
 
-    res.send(data.join(''))
+    out = data.join('')
+    console.log(out)
+    res.send(out)
 })
 
 app.post('/projects/dump', async (req, res, next) => {
@@ -415,15 +417,17 @@ app.post('/projects/dump', async (req, res, next) => {
             '0:00:00',
             //project.id,
             project.name,
-            project.description,
             project.members,
+            project.description,
             project.slogan,
-            categoryIdToDetails[project.categoryId],
-            project.authorEmail,
+            categoryIdToDetails[project.categoryId].name,
+            //project.authorEmail,
             //project.createdAt,
         ].join("\t") + "\n"
     )
-    res.send(HEADER.concat(projectRows).join(''))
+    out = HEADER.concat(projectRows).join('')
+    console.log(out)
+    res.send(out)
 })
 
 

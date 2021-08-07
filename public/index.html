@@ -54,7 +54,6 @@ function newState () {
 let state = newState()
 
 function googleInit () {
-    console.log("google init");
     gapi.load('auth2', () => {
         gapi.auth2.init({
             client_id: CLIENT_ID,
@@ -62,7 +61,6 @@ function googleInit () {
             //hosted_domain: HOSTED_DOMAIN,
             ux_mode: "redirect"
         }).then(() => {
-            console.log("google auth SUCCESS")
             let googleAuth = gapi.auth2.getAuthInstance()
             googleAuth.isSignedIn.listen(updateGoogleSigninStatus)
             updateGoogleSigninStatus(googleAuth.isSignedIn.get())
@@ -74,7 +72,6 @@ function googleInit () {
 }
 
 function updateGoogleSigninStatus (isSignedIn) {
-    console.log("google signin status: " + isSignedIn)
     let showNoAuthElems = true
     let showYesAuthElems = true
     let form = document.querySelector("form#new_project")
@@ -83,17 +80,9 @@ function updateGoogleSigninStatus (isSignedIn) {
     if (isSignedIn) {
         showYesAuthElems = false
         let googleUser = gapi.auth2.getAuthInstance().currentUser.get()
-        console.log(googleUser)
-        console.log(googleUser.getAuthResponse())
         state.id_token = googleUser.getAuthResponse().id_token
-        console.log('Token: ' + state.id_token)
 
         let profile = googleUser.getBasicProfile()
-        console.log(profile)
-        console.log('ID: ' + profile.getId()) // Do not send to your backend! Use an ID token instead.
-        console.log('Name: ' + profile.getName())
-        console.log('Image URL: ' + profile.getImageUrl())
-        console.log('Email: ' + profile.getEmail()) // This is null if the 'email' scope is not present.
         state.id = profile.getId()
         state.email = profile.getEmail()
         state.isAdmin = (state.email == "admin@example.com")
@@ -120,22 +109,19 @@ function updateGoogleSigninStatus (isSignedIn) {
 
 // https://developers.google.com/identity/sign-in/web/build-button
 function googleSignIn () {
-    console.log("google sign IN")
     let auth2 = gapi.auth2.getAuthInstance()
     auth2.signIn().then(googleUser => {
-        console.log('User signed in.')
         console.log(googleUser)
     }).catch(err => {
-        console.log("signin FAILED")
+        console.log("google signin FAILED")
         console.log(err)
     })
 }
 
 function googleSignOut () {
-    console.log("google sign OUT")
     let auth2 = gapi.auth2.getAuthInstance()
     auth2.signOut().then(function () {
-        console.log('User signed out.')
+        console.log('google signed out.')
     })
 }
 
@@ -298,7 +284,7 @@ function upsertAllProjectRow (project) {
     }
 
     // needs to be after added to document tree so query will find
-    addOrderButtons(rowAllEl)
+    addOrderButtons(rowAllEl, project)
 
     return rowAllEl
 }
@@ -319,6 +305,8 @@ function shiftProject (thisProjectRowEl, dist) {
     if (dist > 0 && thisProjectIndex < dist) dist = thisProjectIndex
     if (dist < 0 && thisProjectIndex >= state.projects.length + dist) dist = thisProjectIndex - state.projects.length + 1
 
+    // note that this shifts, not swaps -- swap would not move intermediate rows!
+    // so below it will recursively call this method to do 1 at a time swaps/shiffts to move everything
     let otherProjectIndex = thisProjectIndex - (dist > 0 ? 1 : -1)
     let otherProjectId = state.projects[otherProjectIndex].id
     let otherProjectRowEl = thisProjectRowEl.parentNode.querySelector('tr[projectId="'+otherProjectId+'"]')
@@ -332,8 +320,6 @@ function shiftProject (thisProjectRowEl, dist) {
     let tmp = state.projects[otherProjectIndex]
     state.projects[otherProjectIndex] = state.projects[thisProjectIndex]
     state.projects[thisProjectIndex] = tmp
-
-//    console.log(`After shift, this: ${state.projects[otherProjectIndex].id} other: ${state.projects[thisProjectIndex].id}`)
 
     if (dist < 0) {
         thisProjectRowEl.parentNode.insertBefore(otherProjectRowEl, thisProjectRowEl)
@@ -353,7 +339,7 @@ function createOrderButton (rowAllEl, text, dist) {
     return button
 }
 
-function addOrderButtons (rowAllEl) {
+function addOrderButtons (rowAllEl, project) {
     let cellEl = rowAllEl.querySelector("tr td:nth-of-type(6)")
     let el = document.createElement("div")
     el.classList.add("admin_only");
@@ -361,6 +347,7 @@ function addOrderButtons (rowAllEl) {
     el.appendChild(createOrderButton(rowAllEl, "\u25B2", 1))
     el.appendChild(createOrderButton(rowAllEl, "\u25BC", -1))
     el.appendChild(createOrderButton(rowAllEl, "\u21CA", -state.projects.length))
+    el.appendChild(document.createTextNode(' ' + project.order))
     cellEl.appendChild(el)
     showHideAdminTools()
 }
@@ -543,7 +530,7 @@ function sendRequest (path, data = {}, cb = null, method = "POST") {
         .catch((err) =>
             updateState({
                 json: () => {
-                    console.log("json response called")
+                    console.log("json response called with err", err)
                     return {
                         err: {
                             msg: err
@@ -558,7 +545,7 @@ function test () {
     sendRequest(
         "authtest",
         {},
-        response => console.log(JSON.stringify(response.json()))
+        response => response.json().then(data => console.log(JSON.stringify(data)))
     )
 }
 
@@ -596,11 +583,19 @@ function saveProjectOrder () {
 }
 
 function dumpVotes () {
-    sendRequest("votes/dump")
+    sendRequest(
+        "votes/dump",
+        {},
+        response => response.text().then(data => console.log(data))
+    )
 }
 
 function dumpProjects () {
-    sendRequest("projects/dump")
+    sendRequest(
+        "projects/dump",
+        {},
+        response => response.text().then(data => console.log(data))
+    )
 }
 
 function upsertVote (vote) {
