@@ -76,8 +76,15 @@ let state = {
 }
 
 function sendStateData (res) {
-    console.log("Sending state data")
-    res.send({ data: state })
+    console.log("Sending state data", state.projects.map(p => p.name))
+    res.send({
+        data: {
+            categories: state.categories,
+            projects: state.projects,
+            // do not include votes of others, but need your own
+            votes: state.votes.filter(v => v.authorEmail == res.locals.email)
+        }
+    })
 }
 
 function sendErr (res, err) {
@@ -115,33 +122,25 @@ async function googleTokenVerify (res, idToken) {
 }
 
 
-async function updateOrder (cache, ids, upsertRow) {
+async function updateOrder (cache, ids, upsertRow, sortState) {
+    // have to update in place because all of this is async
+    // so new rows might have gotten added or edited while this change is taking place
+    // -- only want to change order, nothing else
     for (let i in ids) {
-        let j = cache.findIndex(r => r.id == ids[i])
-        if (j < 0) {
-            // ignore any rows that are no longer present
-        } else if (j == i) {
-            // no swap needed, just update order if not already there
-            if (cache[i].order != i) {
-                cache[i].order = i
-                upsertRow(cache[i])
-            }
-        } else {
-            // swap the rows that have the current idx and the desired idx
-            let tmp = cache[i]
-            cache[i] = cache[j]
-            cache[j] = tmp
-
-            if (cache[i].order != i) {
-                cache[i].order = i
-                upsertRow(cache[i])
-            }
-            if (cache[j].order != j) {
-                cache[j].order = j
-                upsertRow(cache[j])
-            }
+        let row = cache.find(r => r.id == ids[i])
+        // only do the db operation if necessary (order changed)
+        // and rows might have been removed async
+        if (row && row.order != i) {
+            row.order = i
+            upsertRow(row)
         }
     }
+
+    // technically if someone loads the data right now, it will come out of order... meh
+    // would have to add a synchronous blocking operation pausing any new loads until all db + cache updates are done
+
+    // update the state cache sequence to return to clients separately
+    sortState()
 }
 
 
@@ -175,6 +174,7 @@ async function upsertProject (project) {
         v.projectId == project.id && v.categoryId != project.categoryId
             && !ALWAYS_AVAILABLE_CATEGORIES.includes(v.categoryId)
     )
+    // FIXME: maybe just move the votes to the new category?...
     // no transaction here: if subsequent project update fails, we've maybe deleted valid votes
     for (let vote of oldCategoryVotes) {
         console.log('Delete old vote', vote)
@@ -185,6 +185,10 @@ async function upsertProject (project) {
         )
     }
 
+    if (!project.order) {
+        let cacheProject = state.projects.find(p => p.id == project.id)
+        project.order = cacheProject ? cacheProject.order : state.projects.length
+    }
     return upsertProjectRow(project)
 }
 
@@ -338,13 +342,18 @@ app.use(async (req, res, next) => {
 })
 
 app.post('/projects/order', async (req, res, next) => {
-    console.log('Order projects', req.body)
+    console.log('Order projects',
+        req.body.projectIds.map(id => {
+            let project = state.projects.find(p => p.id == id)
+            return project ? project.name : id
+        })
+    )
     let err = await updateOrder(
         state.projects,
         req.body.projectIds,
-        upsertProjectRow
+        upsertProjectRow,
+        sortStateProjects
     )
-    sortStateProjects()
     stateDataOnSuccess(res, err)
 })
 
@@ -433,7 +442,8 @@ app.post('/projects/dump', async (req, res, next) => {
 
 async function populateHackDayCategories () {
     const hackDayCategories = [
-        'Company',
+        'Customer',
+        'Internal',
         'Personal',
         'Slogan',
     ]
@@ -457,6 +467,8 @@ async function populateHackDayCategories () {
 
 function sortStateProjects () {
     state.projects.sort((a, b) => {
+        // this is why we need an order field:
+        // so that we can remember the sequence when loading from the db
         if (a.order > b.order) return 1
         if (a.order < b.order) return -1
         if (a.createdAt > b.createdAt) return 1

@@ -216,7 +216,6 @@ function upsertYourProjectRow (project) {
         form.elements['members'].value = project.members || ""
         form.elements['slogan'].value = project.slogan || ""
         form.elements['categoryId'].value = project.categoryId || ""
-        form.elements['order'].value = project.order || "-1"
         form.elements['createdAt'].value = project.createdAt || ""
         form.elements['id'].value = project.id || ""
         form.querySelector("button").innerText = 'Edit'
@@ -347,7 +346,6 @@ function addOrderButtons (rowAllEl, project) {
     el.appendChild(createOrderButton(rowAllEl, "\u25B2", 1))
     el.appendChild(createOrderButton(rowAllEl, "\u25BC", -1))
     el.appendChild(createOrderButton(rowAllEl, "\u21CA", -state.projects.length))
-    el.appendChild(document.createTextNode(' ' + project.order))
     cellEl.appendChild(el)
     showHideAdminTools()
 }
@@ -562,7 +560,6 @@ function upsertProject (project) {
             members: project.members,
             slogan: project.slogan,
             categoryId: project.categoryId,
-            order: project.order,
             createdAt: project.createdAt,
             id: project.id
         }
@@ -630,7 +627,6 @@ function newProjectSubmit (form) {
             members: form.elements['members'].value,
             slogan: form.elements['slogan'].value,
             categoryId: form.elements['categoryId'].value,
-            order: form.elements['order'].value,
             createdAt: form.elements['createdAt'].value,
             id: form.elements['id'].value,
         })
@@ -645,7 +641,6 @@ function clearNewProject (form) {
     form.elements['members'].value = ''
     form.elements['slogan'].value = ''
     form.elements['categoryId'].value = ''
-    form.elements['order'].value = '-1'
     form.elements['createdAt'].value = ''
     form.elements['id'].value = ''
     form.querySelector("button").innerText = 'Add'
@@ -762,7 +757,6 @@ span.order_button:hover, div.admin_actions div:hover {
             </div>
 
             <form id="new_project" onsubmit="return false">
-                <input name="order" type="hidden" value="-1" />
                 <input name="createdAt" type="hidden" />
                 <p>New Project:</p>
                 <table>
