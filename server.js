@@ -126,7 +126,7 @@ async function updateOrder (cache, ids, upsertRow, sortState) {
     // have to update in place because all of this is async
     // so new rows might have gotten added or edited while this change is taking place
     // -- only want to change order, nothing else
-    for (let i in ids) {
+    for (let i = 0; i < ids.length; i++) {
         let row = cache.find(r => r.id == ids[i])
         // only do the db operation if necessary (order changed)
         // and rows might have been removed async
