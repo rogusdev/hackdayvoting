@@ -363,25 +363,39 @@ app.post('/votes/dump', async (req, res, next) => {
     let projectIdToDetails = dictByIdOfArray(state.projects)
     let categoryIdToDetails = dictByIdOfArray(state.categories)
 
+    for (let project of state.projects) {
+        let categoryIds = [project.categoryId].concat(ALWAYS_AVAILABLE_CATEGORIES)
+        for (let categoryId of categoryIds) {
+            let category = categoryIdToDetails[categoryId]
+            let countId = project.id + "+" + category.id
+            voteCounts[countId] = {
+                count: 0,
+                project: project,
+                category: category
+            }
+        }
+    }
+
     for (let vote of state.votes) {
         let project = projectIdToDetails[vote.projectId]
         let category = categoryIdToDetails[vote.categoryId]
+
         if (!project) {
-            console.log(`Missing project '${projectId}' for vote '${vote.id}'!`)
+            console.log(`Missing project '${vote.projectId}' for vote '${vote.id}'!`)
             continue
         }
         if (!category) {
-            console.log(`Missing category '${categoryId}' for vote '${vote.id}'!`)
+            console.log(`Missing category '${vote.categoryId}' for vote '${vote.id}'!`)
             continue
         }
 
         let countId = project.id + "+" + category.id
-        let oldCount = voteCounts.hasOwnProperty(countId) ? voteCounts[countId].count : 0
-        voteCounts[countId] = {
-            count: oldCount + 1,
-            project: project,
-            category: category
+        if (!voteCounts.hasOwnProperty(countId)) {
+            console.log(`Missing vote count for '${countId}' for vote '${vote.id}'!`)
+            continue
         }
+
+        voteCounts[countId].count = voteCounts[countId].count + 1
     }
 
     let data = []
@@ -403,38 +417,21 @@ app.post('/votes/dump', async (req, res, next) => {
         data.push([
             category.name,
             count,
-            project.name,
-            project.members,
-            project.description,
-            project.slogan
-        ].join("\t") + "\n")
-    }
-
-    out = data.join('')
-    console.log(out)
-    res.send(out)
-})
-
-app.post('/projects/dump', async (req, res, next) => {
-    let categoryIdToDetails = dictByIdOfArray(state.categories)
-
-    console.log('Projects dump')
-    const HEADER = ['Winner	Timestamp	Title	Description	Members	Slogan  Category	Author\n']
-    const projectRows = state.projects.map(
-        project => [
             '__',
-            '0:00:00',
-            //project.id,
+            '(0:00:00)',
             project.name,
+            'by',
             project.members,
+            ':',
             project.description,
+            '-',
             project.slogan,
             categoryIdToDetails[project.categoryId].name,
-            //project.authorEmail,
-            //project.createdAt,
-        ].join("\t") + "\n"
-    )
-    out = HEADER.concat(projectRows).join('')
+        ].join("\t") + "\n")
+    }
+    const HEADER = ['Winner	Timestamp	Title	DUMP	Members	DUMP	Description	DUMP	Slogan	Category\n']
+    const FOOTER = ['\n*C = Customer facing winner\n*I = Internal support winner\n*P = Personal project winner\n*_ = Honorable mentions\n*S = Slogan winner']
+    out = HEADER.concat(data).concat(FOOTER).join('')
     console.log(out)
     res.send(out)
 })

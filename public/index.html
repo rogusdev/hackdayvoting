@@ -587,14 +587,6 @@ function dumpVotes () {
     )
 }
 
-function dumpProjects () {
-    sendRequest(
-        "projects/dump",
-        {},
-        response => response.text().then(data => console.log(data))
-    )
-}
-
 function upsertVote (vote) {
     sendRequest(
         "votes",
@@ -722,7 +714,6 @@ span.order_button:hover, div.admin_actions div:hover {
             <div class="admin_only admin_actions">
                 <div onclick="saveProjectOrder()">Save Project Order</div>
                 <div onclick="dumpVotes()">Dump Votes</div>
-                <div onclick="dumpProjects()">Dump Projects</div>
                 <div onclick="clearRefresh()">Stop Refresh</div>
                 <div onclick="startRefresh()">Start Refresh</div>
             </div>

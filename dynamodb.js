@@ -21,8 +21,8 @@ function sleep (ms) {
 
 
 // https://stackoverflow.com/questions/14810506/map-function-for-objects-instead-of-arrays
-ddbItemMap = (o, fn) =>
-    Object.fromEntries(
+function ddbItemMap (o, fn) {
+    return Object.fromEntries(
         Object.entries(o).map(
             ([k, v], i) => {
                 if (k == 'title') {
@@ -36,9 +36,14 @@ ddbItemMap = (o, fn) =>
             }
         )
     )
+}
+
+function cacheItemValue (v, k, i) {
+   return v.S !== undefined ? v.S : parseInt(v.N)
+}
 
 function updateIdCacheItem (cache, itemDdb) {
-    let item = ddbItemMap(itemDdb, (v, k, i) => v.S || parseInt(v.N));
+    let item = ddbItemMap(itemDdb, cacheItemValue);
     let idx = cache.findIndex(it => it.id == item.id)
     if (idx < 0) {
         cache.push(item)
