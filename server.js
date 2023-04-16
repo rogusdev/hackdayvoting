@@ -150,9 +150,9 @@ async function upsertProjectRow (project) {
         TABLE_NAME_PROJECTS,
         state.projects,
         {
+            'members' : {S: project.members},
             'title' : {S: project.name},
             'description' : {S: project.description},
-            'members' : {S: project.members},
             'slogan' : {S: project.slogan},
             'categoryId' : {S: project.categoryId},
             'authorEmail': {S: project.authorEmail},
@@ -275,9 +275,9 @@ app.post('/projects', async (req, res, next) => {
     console.log('Upsert project', req.body)
     let order = req.body.order < 0 ? '' + state.projects.length : req.body.order
     let err = await upsertProject({
+        members: req.body.members,
         name: req.body.name,
         description: req.body.description,
-        members: req.body.members,
         slogan: req.body.slogan,
         categoryId: req.body.categoryId,
         authorEmail: res.locals.email,
@@ -504,9 +504,9 @@ async function init () {
         TABLE_NAME_PROJECTS,
         state.projects,
         [
+            'members',
             'title',
             'description',
-            'members',
             'slogan',
             'categoryId',
             'authorEmail',
