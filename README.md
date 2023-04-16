@@ -1,10 +1,10 @@
 # Hack Day Project Voting!
 
 ```
-asdf install nodejs 14.15.1
-asdf global nodejs 14.15.1
+asdf install nodejs 18.15.0
+asdf global nodejs 18.15.0
 yarn install
-yarn start
+STORAGE_PROVIDER=dynamodb yarn start
 ```
 
 Frontend can run from the backend container because of express static (/ directs to index.html automatically)

@@ -50,6 +50,7 @@ const TABLE_NAME_CATEGORIES = 'HackDay.Categories'
 const TABLE_NAME_PROJECTS = 'HackDay.Projects'
 const TABLE_NAME_VOTES = 'HackDay.Votes'
 
+const EXPECTED_AVAILABLE_CATEGORIES = ['Customer','Internal','Personal']
 let ALWAYS_AVAILABLE_CATEGORIES = ['Slogan']
 
 
@@ -117,7 +118,7 @@ async function googleTokenVerify (res, idToken) {
         res.locals.userid = payload['sub']
         res.locals.email = payload['email']
     } catch (err) {
-        return {code: RESP_CODE_INVALID_TOKEN, msg: RESP_MSG_INVALID_TOKEN}
+        return {code: RESP_CODE_INVALID_TOKEN, msg: RESP_MSG_INVALID_TOKEN, err: err}
     }
 }
 
@@ -438,13 +439,7 @@ app.post('/votes/dump', async (req, res, next) => {
 
 
 async function populateHackDayCategories () {
-    const hackDayCategories = [
-        'Customer',
-        'Internal',
-        'Personal',
-        'Slogan',
-    ]
-
+    let hackDayCategories = EXPECTED_AVAILABLE_CATEGORIES.concat(ALWAYS_AVAILABLE_CATEGORIES)
     const categoryNames = state.categories.map(v => v.name);
     let categoriesToAdd =
         hackDayCategories.filter(name => !categoryNames.includes(name));
@@ -459,6 +454,18 @@ async function populateHackDayCategories () {
             }
         )
     }
+    state.categories = state.categories.sort((a,b) => {
+        let len = EXPECTED_AVAILABLE_CATEGORIES.length
+        let ai = EXPECTED_AVAILABLE_CATEGORIES.indexOf(a.name)
+        let bi = EXPECTED_AVAILABLE_CATEGORIES.indexOf(b.name)
+        if (ai < 0) {
+            ai = ALWAYS_AVAILABLE_CATEGORIES.indexOf(a.name) + len
+        }
+        if (bi < 0) {
+            bi = ALWAYS_AVAILABLE_CATEGORIES.indexOf(b.name) + len
+        }
+        return ai - bi
+    })
     console.log("Categories", state.categories)
 }
 

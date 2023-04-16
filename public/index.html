@@ -27,12 +27,6 @@ https://developers.google.com/api-client-library/
 https://github.com/google/google-api-javascript-client
 https://developers.google.com/api-client-library/javascript/samples/samples#authorizing-and-making-authorized-requests
 
-
-
-        <meta name="google-signin-scope" content="profile email">
-
-        <meta name="google-signin-client_id"
-            content="861609598303-o00osplh8n4jidur6mr6931c8sjikjuu.apps.googleusercontent.com" />
 -->
         <script>
 
@@ -52,6 +46,9 @@ function newState () {
 }
 
 let state = newState()
+
+let currentRowAllEl = null
+let oldBackgroundColor = null
 
 function googleInit () {
     gapi.load('auth2', () => {
@@ -134,9 +131,10 @@ function showHideAdminTools () {
 function setCategoriesInProjectsHeader () {
     let allProjectsHeaderRowEl = document.querySelector("#all_projects table tr")
     let headerCells = [
-        'Name',
-        'Description',
+        'Index',
         'Members',
+        'Title',
+        'Description',
         'Slogan',
         'Category',
         '--Votes--'
@@ -238,8 +236,13 @@ function upsertYourProjectRow (project) {
     return rowEl
 }
 
-function upsertAllProjectRow (project) {
+function upsertAllProjectRow (project, idx) {
     let rowAllEl = createProjectRowEl(project)
+
+    // add index at the beginning
+    let indexCell = document.createElement("td")
+    indexCell.append(document.createTextNode(idx))
+    rowAllEl.prepend(indexCell)
 
     // add empty space for Votes separator column
     rowAllEl.appendChild(document.createElement("td"))
@@ -289,6 +292,7 @@ function upsertAllProjectRow (project) {
 }
 
 function shiftProject (thisProjectRowEl, dist) {
+    if (!state.isAdmin) return 0
     if (state.refresh) {
         clearRefresh()
 //        alert('Stopped refresh! Remember to start it again after saving')
@@ -298,11 +302,15 @@ function shiftProject (thisProjectRowEl, dist) {
     let thisProjectIndex = state.projects.findIndex(project => project.id == thisProjectId)
     if (thisProjectIndex != thisProjectRowEl.rowIndex - 1) {
         console.log(`This project index ${thisProjectIndex} and row index ${thisProjectRowEl.rowIndex} do not match for ${thisProjectId}!`)
-        return
+        return 0
     }
 
     if (dist > 0 && thisProjectIndex < dist) dist = thisProjectIndex
     if (dist < 0 && thisProjectIndex >= state.projects.length + dist) dist = thisProjectIndex - state.projects.length + 1
+    if (dist == 0) {
+        console.log(`This project index ${thisProjectIndex} is at top or bottom for ${thisProjectId}`)
+        return 0
+    }
 
     // note that this shifts, not swaps -- swap would not move intermediate rows!
     // so below it will recursively call this method to do 1 at a time swaps/shiffts to move everything
@@ -313,12 +321,15 @@ function shiftProject (thisProjectRowEl, dist) {
         console.log(`Other project index ${otherProjectIndex} and row index ${otherProjectRowEl.rowIndex} do not match for ${otherProjectId}!`)
         console.log(`... for this project index ${thisProjectIndex} and row index ${thisProjectRowEl.rowIndex} of ${thisProjectId} shifting ${dist}!`)
         console.log(state.projects.map(p => p.description))
-        return
+        return 0
     }
 
     let tmp = state.projects[otherProjectIndex]
     state.projects[otherProjectIndex] = state.projects[thisProjectIndex]
     state.projects[thisProjectIndex] = tmp
+
+    thisProjectRowEl.firstChild.textContent = otherProjectIndex
+    otherProjectRowEl.firstChild.textContent = thisProjectIndex
 
     if (dist < 0) {
         thisProjectRowEl.parentNode.insertBefore(otherProjectRowEl, thisProjectRowEl)
@@ -328,6 +339,10 @@ function shiftProject (thisProjectRowEl, dist) {
         thisProjectRowEl.parentNode.insertBefore(thisProjectRowEl, otherProjectRowEl)
         if (dist > 1) shiftProject(thisProjectRowEl, dist - 1)
     }
+
+    // FIXME: somewhere, somehow, there is an extra pixel off every scroll...
+    window.scrollBy(0, -dist * otherProjectRowEl.getBoundingClientRect().height)
+    return dist
 }
 
 function createOrderButton (rowAllEl, text, dist) {
@@ -340,21 +355,50 @@ function createOrderButton (rowAllEl, text, dist) {
 
 function addOrderButtons (rowAllEl, project) {
     let cellEl = rowAllEl.querySelector("tr td:nth-of-type(6)")
-    let el = document.createElement("div")
-    el.classList.add("admin_only");
-    el.appendChild(createOrderButton(rowAllEl, "\u21C8", state.projects.length))
-    el.appendChild(createOrderButton(rowAllEl, "\u25B2", 1))
-    el.appendChild(createOrderButton(rowAllEl, "\u25BC", -1))
-    el.appendChild(createOrderButton(rowAllEl, "\u21CA", -state.projects.length))
-    cellEl.appendChild(el)
+    let buttonsEl = document.createElement("div")
+    buttonsEl.classList.add("admin_only");
+    buttonsEl.appendChild(createOrderButton(rowAllEl, "\u21C8", state.projects.length))
+    buttonsEl.appendChild(createOrderButton(rowAllEl, "\u25B2", 1))
+    buttonsEl.appendChild(createOrderButton(rowAllEl, "\u25BC", -1))
+    buttonsEl.appendChild(createOrderButton(rowAllEl, "\u21CA", -state.projects.length))
+    cellEl.appendChild(buttonsEl)
+
+    rowAllEl.addEventListener("mouseenter", (event) => {
+        if (!state.isAdmin) return
+        currentRowAllEl = rowAllEl
+        currentRowAllEl.style.backgroundColor = "green"
+    });
+    rowAllEl.addEventListener("mouseleave", (event) => {
+        if (!currentRowAllEl) return
+        currentRowAllEl.style.backgroundColor = "transparent"
+        currentRowAllEl = null
+    });
+
     showHideAdminTools()
 }
 
-function upsertProjectRow (project) {
+document.addEventListener("keyup", (event) => {
+    if (!currentRowAllEl) return
+    if (event.key == "ArrowUp" || event.key == "W" || event.key == "w") {
+        shiftProject(currentRowAllEl, 1)
+    } else if (event.key == "ArrowDown" || event.key == "S" || event.key == "s") {
+        shiftProject(currentRowAllEl, -1)
+    } else if (event.key == "ArrowLeft" || event.key == "A" || event.key == "a") {
+        console.log("set timestamp")
+    } else if (event.key == "ArrowRight" || event.key == "D" || event.key == "d") {
+        console.log("clear timestamp")
+    } else if (event.key == "Q" || event.key == "q") {
+        shiftProject(currentRowAllEl, state.projects.length)
+    } else if (event.key == "E" || event.key == "e") {
+        shiftProject(currentRowAllEl, -state.projects.length)
+    }
+});
+
+function upsertProjectRow (project, idx) {
     if (project.authorEmail == state.email) {
         upsertYourProjectRow(project)
     }
-    upsertAllProjectRow(project)
+    upsertAllProjectRow(project, idx)
 }
 
 function upsertVoteRow (vote) {
@@ -604,7 +648,7 @@ function deleteVote (id) {
 
 function newProjectSubmit (form) {
     if (!form.elements['name'].value) {
-        alert('Must have name!')
+        alert('Must have title!')
     }
     else if (!form.elements['members'].value) {
         alert('Must have members!')
@@ -651,7 +695,7 @@ function clearNewProject (form) {
     font-weight: bold;
 }
 
-table, tr, td, th {
+td, th {
     border: 1px solid black;
     padding: 3px;
 }
@@ -701,9 +745,10 @@ span.order_button:hover, div.admin_actions div:hover {
                 <p>All Projects (for Voting):</p>
                 <table>
                     <tr>
-                        <th>Name</th>
-                        <th>Description</th>
+                        <th>Index</th>
                         <th>Members</th>
+                        <th>Title</th>
+                        <th>Description</th>
                         <th>Slogan</th>
                         <th>Category</th>
                         <th>--Votes--</th>
@@ -736,9 +781,9 @@ span.order_button:hover, div.admin_actions div:hover {
                 <p>Your Projects:</p>
                 <table>
                     <tr>
-                        <th>Name</th>
-                        <th>Description</th>
                         <th>Members</th>
+                        <th>Title</th>
+                        <th>Description</th>
                         <th>Slogan</th>
                         <th>Category</th>
                         <th>Remove</th>
@@ -752,7 +797,7 @@ span.order_button:hover, div.admin_actions div:hover {
                 <p>New Project:</p>
                 <table>
                     <tr>
-                        <th>Name</th>
+                        <th>Title</th>
                         <th>Description</th>
                         <th>Members</th>
                         <th>Slogan</th>
@@ -762,9 +807,9 @@ span.order_button:hover, div.admin_actions div:hover {
                         <th>Id</th>
                     </tr>
                     <tr>
+                        <td><input name="members" /></td>
                         <td><input name="name" /></td>
                         <td><input name="description" /></td>
-                        <td><input name="members" /></td>
                         <td><input name="slogan" /></td>
                         <td><select name="categoryId" /></td>
                         <td><button onclick="newProjectSubmit(this.form)">Add</button></td>

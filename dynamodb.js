@@ -89,6 +89,9 @@ async function createIdTableIfNeeded (name, count = 0) {
         throw new Exception(`Table ${name} failed to Create!`)
     }
 
+    console.log(`Try ${count} for creating '${name}'`)
+    let status = null
+
     let params = {
         TableName: name,
     }
